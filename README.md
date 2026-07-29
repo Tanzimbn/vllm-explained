@@ -11,12 +11,18 @@ plus knobs — so you drive the clock instead of reading about it.
 
 Audience: you know transformers and attention; you're new to inference serving.
 
+**Live:** https://tanzimbn.github.io/vllm-explained/
+
 ```bash
 npm install
-npm run dev      # http://localhost:5180
-npm run test     # 158 tests
+npm run dev      # http://localhost:5180/vllm-explained/
+npm run test     # 168 tests
 npm run build && npm run preview
 ```
+
+The dev URL carries the `/vllm-explained/` prefix because that's the path GitHub
+Pages serves from, and local and production should not differ. Visiting `/` redirects there.
+To serve from a domain root instead, build with `BASE_PATH=/ npm run build`.
 
 ## Roadmap
 
@@ -90,6 +96,34 @@ claims the prose makes — for example:
 
 Render smoke tests mount all 14 pages, and a build check confirms every Tailwind class used actually
 resolves.
+
+## Deployment
+
+`.github/workflows/deploy.yml` runs on every push to `main`: install → test → build → publish
+`dist/` via `actions/deploy-pages`. A red test suite blocks the deploy, because the simulators are
+what the pages assert.
+
+**One manual step:** in the repo's *Settings → Pages*, set **Source** to **GitHub Actions**. Without
+it the workflow builds and then fails at the deploy step.
+
+Three things the sub-path deployment needs, all pinned by tests in `src/deploy.test.jsx`:
+
+| Concern | Handled by |
+|---|---|
+| Asset URLs | `base: '/vllm-explained/'` in `vite.config.js` — both slashes matter |
+| Router matching | `basename={import.meta.env.BASE_URL}` on `BrowserRouter` |
+| Blog figures | `${import.meta.env.BASE_URL}img/…` rather than an absolute `/img/…` |
+
+Deep links get one extra wrinkle. GitHub Pages has no history-API fallback, so
+`/vllm-explained/stage/scheduler` matches no file. Pages serves `404.html` for unmatched paths, so
+the build emits a copy of `index.html` under that name (`githubPagesFallback` in `vite.config.js`) —
+the SPA boots, the router reads the real URL, and the correct stage renders with the address bar
+intact. Copying at build time keeps the hashed asset filenames in sync.
+
+The one visible consequence: a deep link returns HTTP **404** even though it renders correctly. That
+is invisible to users but means crawlers won't index individual stages. If that ever matters, swap
+the fallback for the [`spa-github-pages`](https://github.com/rafgraph/spa-github-pages) redirect
+trick, which trades a redirect flash for a 200.
 
 ## Caveats
 

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useSimulation } from '../hooks/useSimulation'
 import batching, { utilization } from '../sim/batching'
 import { Callout, Code, CodeBlock, SimFrame, StatTile, Takeaways } from '../components/ui'
@@ -138,7 +139,7 @@ export default function PrefillVsDecode() {
         vLLM's V1 scheduler can mix prefills and decodes in the <em>same</em> step. The V0 engine
         could only do one or the other per step, which left performance on the table — you'll see
         exactly how the mixing works in{' '}
-        <a href="/stage/forward-pass">stage 05</a>.
+        <Link to="/stage/forward-pass">stage 05</Link>.
       </p>
 
       <h3>Why batching naively goes wrong</h3>

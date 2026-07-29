@@ -64,7 +64,7 @@ export function BlogFigure({ src, caption, max = 720 }) {
     <figure className="my-6">
       <div className="overflow-hidden rounded-lg border border-edge bg-white/95 p-2">
         <img
-          src={`/img/${src}`}
+          src={`${import.meta.env.BASE_URL}img/${src}`}
           alt={caption}
           loading="lazy"
           className="mx-auto h-auto w-full"
