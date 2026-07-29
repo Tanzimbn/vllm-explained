@@ -1,0 +1,145 @@
+@import 'tailwindcss';
+
+/*
+  Semantic visualization tokens.
+  Defined ONCE here and consumed by every viz component, so that
+  "prefill", "decode", "free block", "cache hit", "preempted", "rejected"
+  are the same colour on every page of the site.
+  State is never encoded by hue alone — every viz also carries a label,
+  glyph, or pattern.
+*/
+@theme {
+  --color-ink: #e7e9ee;
+  --color-ink-dim: #9aa3b2;
+  --color-ink-faint: #6b7385;
+  --color-surface: #0c0e14;
+  --color-panel: #13161f;
+  --color-panel-2: #1a1e2a;
+  --color-edge: #262b3a;
+  --color-edge-bright: #39415a;
+
+  --color-accent: #7dd3fc;
+  --color-accent-dim: #0e7490;
+
+  /* workload kinds */
+  --color-prefill: #f0a35e;
+  --color-decode: #7dd3fc;
+
+  /* kv-cache block states */
+  --color-free: #2a3040;
+  --color-alloc: #8b96f5;
+  --color-cached: #5ddba4;
+  --color-partial: #c9a227;
+
+  /* outcomes */
+  --color-good: #5ddba4;
+  --color-warn: #e0b341;
+  --color-bad: #ef7a85;
+
+  --font-mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas,
+    monospace;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv02', 'cv03', 'cv04';
+}
+
+/* subtle grid backdrop */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black, transparent);
+}
+
+::selection {
+  background: var(--color-accent-dim);
+  color: #fff;
+}
+
+/* Prose defaults for stage bodies — no typography plugin needed. */
+.prose-stage p {
+  color: var(--color-ink-dim);
+  line-height: 1.75;
+  margin-block: 0.9rem;
+}
+.prose-stage strong {
+  color: var(--color-ink);
+  font-weight: 600;
+}
+.prose-stage ul,
+.prose-stage ol {
+  color: var(--color-ink-dim);
+  line-height: 1.75;
+  margin-block: 0.9rem;
+  padding-left: 1.15rem;
+}
+.prose-stage ul {
+  list-style: disc;
+}
+.prose-stage ol {
+  list-style: decimal;
+}
+.prose-stage li {
+  margin-block: 0.3rem;
+}
+.prose-stage li::marker {
+  color: var(--color-ink-faint);
+}
+.prose-stage a {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-dim);
+  text-underline-offset: 3px;
+}
+.prose-stage h3 {
+  color: var(--color-ink);
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+  letter-spacing: -0.01em;
+}
+
+/* Custom scrollbars inside horizontally-scrolling sims */
+.scroll-x {
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge-bright) transparent;
+}
+.scroll-x::-webkit-scrollbar {
+  height: 8px;
+}
+.scroll-x::-webkit-scrollbar-thumb {
+  background: var(--color-edge-bright);
+  border-radius: 99px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+  html {
+    scroll-behavior: auto;
+  }
+}
