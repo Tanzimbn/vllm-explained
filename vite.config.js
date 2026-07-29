@@ -9,4 +9,5 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.js', 'src/**/*.test.jsx'],
   },
+  base: 'vllm-explained'
 })
