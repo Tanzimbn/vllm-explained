@@ -16,7 +16,7 @@ Audience: you know transformers and attention; you're new to inference serving.
 ```bash
 npm install
 npm run dev      # http://localhost:5180/vllm-explained/
-npm run test     # 168 tests
+npm run test     # 194 tests
 npm run build && npm run preview
 ```
 
@@ -48,16 +48,27 @@ To serve from a domain root instead, build with `BASE_PATH=/ npm run build`.
 
 ```
 src/
-├── content/roadmap.js     single source of truth — drives router, sidebar, prev/next, map page
+├── content/roadmap.js     single source of truth — drives router, stage strip, prev/next, map page
 ├── sim/                   pure JS reducers. No React, no DOM, no Date.now, no Math.random.
 ├── hooks/
 │   ├── simHistory.js      pure history arithmetic (advance / advanceToEnd)
 │   └── useSimulation.js   the clock: play/pause/step/back/reset/speed
 ├── components/
-│   ├── ui/                SimFrame, StepControls, Knob, Callout, CodeBlock, BlogFigure…
+│   ├── layout/            Shell (header + stage strip), StageLayout (the two-pane grid)
+│   ├── ui/                SimPanel, SimFrame, StepControls, Knob, Callout, CodeBlock, BlogFigure…
 │   └── viz/               BlockGrid, QueueLane, TokenStrip, Timeline, DistChart, LineChart, NodeGraph
-└── stages/                one page per stage: prose + <SimFrame> widgets
+└── stages/                one page per stage: prose + the sim it pins to the pane
 ```
+
+Each stage is **prose on the left, its simulator pinned in a sticky pane on the right** — so the
+instrument stays in view for the whole read, and "Focus simulator" collapses the prose when you would
+rather just drive. A stage with a second simulator keeps that one inline in the prose.
+
+The look is the **Modernist** design system, imported from a claude.ai/design project: a light ground,
+ink, one red accent with 100–900 ramps, Archivo, zero corner radius, and structure carried by 2px
+rules rather than by cards. Two rules bend for this site's content — the request-identity palette
+keeps muted hues, because some sims need five separable fills at once and ink plus one red cannot do
+it; and the blog diagrams are not printed greyscale, because their colour carries meaning.
 
 Every simulator implements one contract:
 
@@ -94,8 +105,9 @@ claims the prose makes — for example:
 - Below `B_sat` step latency is flat and throughput scales linearly; above it, throughput saturates
   while latency climbs.
 
-Render smoke tests mount all 14 pages, and a build check confirms every Tailwind class used actually
-resolves.
+Render smoke tests mount all 14 pages and assert each one is laid out as prose plus a pinned
+simulator pane. `src/theme.test.js` pins the design-system contract: the ground/ink/accent trio, both
+100–900 ramps, a radius scale that is zero everywhere, and the fill/ink pairing helpers.
 
 ## Deployment
 

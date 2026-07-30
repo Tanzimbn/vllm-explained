@@ -1,47 +1,118 @@
 @import 'tailwindcss';
 
 /*
-  Semantic visualization tokens.
-  Defined ONCE here and consumed by every viz component, so that
-  "prefill", "decode", "free block", "cache hit", "preempted", "rejected"
-  are the same colour on every page of the site.
-  State is never encoded by hue alone — every viz also carries a label,
-  glyph, or pattern.
+  Modernist — the design system this site is built on.
+  Flat, architectural, set in Archivo: ink on a light ground with a single red
+  accent, zero corner radius, structure carried by 2px rules rather than by
+  boxes or shadows. Nothing floats and nothing is decorated.
+
+  Token names are kept from the previous dark theme (ink / panel / edge / …) so
+  every `text-ink`, `bg-panel`, `border-edge` in the components keeps meaning —
+  only the values moved. The 100–900 ramps below are Modernist's own, generated
+  in OKLCH on one shared lightness scale, so the same step of any ramp carries
+  the same visual weight.
 */
 @theme {
-  --color-ink: #e7e9ee;
-  --color-ink-dim: #9aa3b2;
-  --color-ink-faint: #6b7385;
-  --color-surface: #0c0e14;
-  --color-panel: #13161f;
-  --color-panel-2: #1a1e2a;
-  --color-edge: #262b3a;
-  --color-edge-bright: #39415a;
+  /* ground and ink */
+  --color-surface: #f3f2f2;
+  --color-panel: #eae9e9;
+  --color-panel-2: #eae7e7;
+  --color-ink: #201e1d;
+  --color-ink-dim: #444141;
+  --color-ink-faint: #7d7979;
 
-  --color-accent: #7dd3fc;
-  --color-accent-dim: #0e7490;
+  /* rules. `edge` is the divider; `edge-bright` is a full-strength ink rule. */
+  --color-divider: color-mix(in srgb, #201e1d 40%, transparent);
+  --color-edge: color-mix(in srgb, #201e1d 40%, transparent);
+  --color-edge-bright: #201e1d;
 
-  /* workload kinds */
-  --color-prefill: #f0a35e;
-  --color-decode: #7dd3fc;
+  /* the one accent. `accent-dim` is the step readable as body-size text. */
+  --color-accent: #ec3013;
+  --color-accent-dim: #ae1800;
 
-  /* kv-cache block states */
-  --color-free: #2a3040;
-  --color-alloc: #8b96f5;
-  --color-cached: #5ddba4;
-  --color-partial: #c9a227;
+  --color-neutral-100: #f8f4f4;
+  --color-neutral-200: #eae7e7;
+  --color-neutral-300: #d7d3d3;
+  --color-neutral-400: #bab6b6;
+  --color-neutral-500: #9b9797;
+  --color-neutral-600: #7d7979;
+  --color-neutral-700: #605d5d;
+  --color-neutral-800: #444141;
+  --color-neutral-900: #2d2b2b;
 
-  /* outcomes */
-  --color-good: #5ddba4;
-  --color-warn: #e0b341;
-  --color-bad: #ef7a85;
+  --color-accent-100: #fff2ef;
+  --color-accent-200: #ffe0d9;
+  --color-accent-300: #ffc4b8;
+  --color-accent-400: #ff9783;
+  --color-accent-500: #ff563c;
+  --color-accent-600: #dd2b0f;
+  --color-accent-700: #ae1800;
+  --color-accent-800: #7c1405;
+  --color-accent-900: #4d170e;
 
-  --font-mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas,
-    monospace;
+  /*
+    Semantic visualization tokens. Defined ONCE here and consumed by every viz
+    component, so "prefill", "decode", "free block", "cache hit", "preempted"
+    are the same colour on every page. State is never encoded by hue alone —
+    every viz also carries a label, glyph, or pattern.
+
+    Two different jobs, treated differently:
+
+    Severity is strictly mono. good = ink (calm), warn = accent-700, bad =
+    accent. "The number went red" therefore means "this is the number going
+    wrong" — the whole point of a single-accent system.
+
+    Identity keeps hues, because a 16-block grid with five owners needs more
+    simultaneous distinctions than ink and one red can carry. Those live in
+    reqColor() in components/viz, retuned to sit on this ground.
+
+    Each fill carries an explicit `-ink` companion: on a light ground some of
+    these are dark fills wanting light text and some are light fills wanting
+    ink, and that cannot be guessed at the call site.
+  */
+  --color-prefill: #ec3013;
+  --color-prefill-ink: #f3f2f2;
+  --color-decode: #2d2b2b;
+  --color-decode-ink: #f3f2f2;
+
+  --color-free: #eae7e7;
+  --color-free-ink: #7d7979;
+  --color-alloc: #605d5d;
+  --color-alloc-ink: #f3f2f2;
+  --color-cached: #ae1800;
+  --color-cached-ink: #f3f2f2;
+  --color-partial: #ffc4b8;
+  --color-partial-ink: #201e1d;
+
+  --color-good: #201e1d;
+  --color-good-ink: #f3f2f2;
+  --color-warn: #ae1800;
+  --color-warn-ink: #f3f2f2;
+  --color-bad: #ec3013;
+  --color-bad-ink: #f3f2f2;
+
+  --font-heading: 'Archivo', system-ui, sans-serif;
+  --font-sans: 'Archivo', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /*
+    Zero radius, system-wide. Setting the scale itself rather than editing every
+    call site means an existing `rounded-md`/`rounded-lg`/`rounded-xl` resolves
+    to a square corner, and nothing can drift back by accident.
+  */
+  --radius: 0px; /* the bare `rounded` utility reads this one */
+  --radius-xs: 0px;
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-full: 0px;
 }
 
 :root {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 html {
@@ -51,45 +122,54 @@ html {
 body {
   background: var(--color-surface);
   color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
-  font-feature-settings: 'cv02', 'cv03', 'cv04';
 }
 
-/* subtle grid backdrop */
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.022) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.022) 1px, transparent 1px);
-  background-size: 48px 48px;
-  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black, transparent);
+/* Headings are the display voice of the system: Archivo at 800/900, tight. */
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.12;
 }
 
 ::selection {
-  background: var(--color-accent-dim);
-  color: #fff;
+  background: var(--color-accent-300);
+  color: var(--color-ink);
+}
+
+:focus {
+  outline: none;
+}
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
 }
 
 /* Prose defaults for stage bodies — no typography plugin needed. */
 .prose-stage p {
-  color: var(--color-ink-dim);
-  line-height: 1.75;
-  margin-block: 0.9rem;
+  color: var(--color-ink);
+  font-size: 16.5px;
+  line-height: 1.65;
+  margin-block: 0 1.5rem;
+  text-wrap: pretty;
 }
 .prose-stage strong {
-  color: var(--color-ink);
-  font-weight: 600;
+  font-weight: 700;
 }
 .prose-stage ul,
 .prose-stage ol {
-  color: var(--color-ink-dim);
-  line-height: 1.75;
-  margin-block: 0.9rem;
-  padding-left: 1.15rem;
+  color: var(--color-ink);
+  font-size: 16px;
+  line-height: 1.65;
+  margin-block: 0 1.5rem;
+  padding-left: 1.35rem;
 }
 .prose-stage ul {
   list-style: disc;
@@ -98,38 +178,49 @@ body::before {
   list-style: decimal;
 }
 .prose-stage li {
-  margin-block: 0.3rem;
+  margin-block: 0.4rem;
+  text-wrap: pretty;
 }
 .prose-stage li::marker {
-  color: var(--color-ink-faint);
+  color: var(--color-accent-700);
 }
+/* accent-700 rather than accent: the accent-to-ground pair is tuned for chrome,
+   not for paragraph-size text. */
 .prose-stage a {
+  color: var(--color-accent-700);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-accent-300);
+}
+.prose-stage a:hover {
   color: var(--color-accent);
-  text-decoration: underline;
-  text-decoration-color: var(--color-accent-dim);
-  text-underline-offset: 3px;
+  border-bottom-color: var(--color-accent);
+}
+.prose-stage h2 {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  margin-top: 2.25rem;
+  margin-bottom: 0.75rem;
 }
 .prose-stage h3 {
-  color: var(--color-ink);
-  font-size: 1.05rem;
-  font-weight: 600;
-  margin-top: 2rem;
-  margin-bottom: 0.5rem;
+  font-size: 18px;
+  font-weight: 800;
   letter-spacing: -0.01em;
+  margin-top: 2rem;
+  margin-bottom: 0.6rem;
 }
 
 /* Custom scrollbars inside horizontally-scrolling sims */
 .scroll-x {
   overflow-x: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--color-edge-bright) transparent;
+  scrollbar-color: var(--color-neutral-400) transparent;
 }
 .scroll-x::-webkit-scrollbar {
   height: 8px;
 }
 .scroll-x::-webkit-scrollbar-thumb {
-  background: var(--color-edge-bright);
-  border-radius: 99px;
+  background: var(--color-neutral-400);
 }
 
 @media (prefers-reduced-motion: reduce) {

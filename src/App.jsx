@@ -1,6 +1,7 @@
 import { Suspense, lazy } from 'react'
 import { Navigate, Route, Routes, useParams } from 'react-router-dom'
-import Shell, { PrevNext, StageHeader } from './components/layout/Shell'
+import Shell from './components/layout/Shell'
+import StageHeader from './components/layout/StageHeader'
 import { stageBySlug } from './content/roadmap'
 import RoadmapMap from './stages/RoadmapMap'
 
@@ -26,16 +27,19 @@ function StagePage() {
   const stage = stageBySlug[slug]
   const Page = PAGES[slug]
   if (!stage || !Page) return <Navigate to="/" replace />
+  // The header renders eagerly so the title paints before the simulator chunk
+  // arrives; the page itself renders its own <StageLayout> two-pane grid.
   return (
-    <article className="prose-stage">
+    <>
       <StageHeader stage={stage} />
       <Suspense
-        fallback={<div className="py-20 text-center font-mono text-xs text-ink-faint">loading…</div>}
+        fallback={
+          <div className="py-20 text-center font-mono text-xs text-ink-faint">loading…</div>
+        }
       >
         <Page />
       </Suspense>
-      <PrevNext slug={slug} />
-    </article>
+    </>
   )
 }
 

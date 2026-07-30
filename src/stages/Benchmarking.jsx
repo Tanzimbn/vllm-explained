@@ -1,4 +1,5 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import roofline, { bSat, latency, latencyMetrics, stepModel } from '../sim/roofline'
 import {
   BlogFigure,
@@ -7,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
@@ -21,7 +23,11 @@ const METRICS = [
     'end-to-end latency',
     'Total time to process a request: TTFT + the sum of all ITLs — equivalently, submission to last token.',
   ],
-  ['Throughput', 'tokens or requests / sec', 'Total tokens processed per second (input, output, or both), or requests per second.'],
+  [
+    'Throughput',
+    'tokens or requests / sec',
+    'Total tokens processed per second (input, output, or both), or requests per second.',
+  ],
   [
     'Goodput',
     'throughput meeting SLOs',
@@ -39,14 +45,14 @@ function LatencyViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile label="TTFT" value={m.ttft.toFixed(0)} unit="ms" tone="accent" />
         <StatTile label="TPOT" value={m.tpot.toFixed(0)} unit="ms" />
         <StatTile label="E2E" value={m.e2e.toFixed(0)} unit="ms" tone="good" />
         <StatTile label="tokens out" value={`${state.tokens.length}/${params.outputTokens}`} />
-      </div>
+      </StatRow>
 
-      <div className="scroll-x rounded-md border border-edge bg-[#08090d] p-4">
+      <div className="scroll-x border border-edge bg-neutral-100 p-4">
         <div className="min-w-[520px]">
           {/* the bar */}
           <div className="flex h-8 overflow-hidden rounded-sm">
@@ -60,7 +66,7 @@ function LatencyViz({ sim }) {
             <div
               style={{ width: `${pct(params.prefillMs)}%`, background: C.prefill }}
               title={`prefill: ${params.prefillMs} ms`}
-              className="flex items-center justify-center font-mono text-[0.55rem] text-black"
+              className="flex items-center justify-center font-mono text-[0.55rem] text-surface"
             >
               prefill
             </div>
@@ -70,7 +76,7 @@ function LatencyViz({ sim }) {
                 style={{
                   width: `${pct(ms)}%`,
                   background: C.decode,
-                  borderLeft: '1px solid #08090d',
+                  borderLeft: '1px solid var(--color-surface)',
                 }}
                 title={`ITL ${i + 1}: ${ms} ms`}
               />
@@ -95,7 +101,13 @@ function LatencyViz({ sim }) {
           <div className="relative mt-3 h-12">
             <div
               className="absolute top-0 border-t border-l border-r px-1 pt-0.5 text-center font-mono text-[0.55rem]"
-              style={{ left: 0, width: `${pct(m.ttft)}%`, borderColor: C.warn, color: C.warn, height: 14 }}
+              style={{
+                left: 0,
+                width: `${pct(m.ttft)}%`,
+                borderColor: C.warn,
+                color: C.warn,
+                height: 14,
+              }}
             >
               TTFT
             </div>
@@ -115,7 +127,13 @@ function LatencyViz({ sim }) {
             )}
             <div
               className="absolute top-10 border-t border-l border-r px-1 pt-0.5 text-center font-mono text-[0.55rem]"
-              style={{ left: 0, width: `${pct(m.e2e)}%`, borderColor: C.good, color: C.good, height: 14 }}
+              style={{
+                left: 0,
+                width: `${pct(m.e2e)}%`,
+                borderColor: C.good,
+                color: C.good,
+                height: 14,
+              }}
             >
               E2E latency = TTFT + Σ ITL
             </div>
@@ -148,7 +166,7 @@ function RooflineViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile label="batch size" value={state.B} tone="accent" />
         <StatTile
           label="step latency / ITL"
@@ -156,19 +174,14 @@ function RooflineViz({ sim }) {
           unit="ms"
           tone={cur.stepMs > params.slaItlMs ? 'bad' : 'good'}
         />
-        <StatTile
-          label="throughput"
-          value={cur.throughput.toFixed(0)}
-          unit=" tok/s"
-          tone="good"
-        />
+        <StatTile label="throughput" value={cur.throughput.toFixed(0)} unit=" tok/s" tone="good" />
         <StatTile
           label="bound by"
           value={cur.bound}
           tone={cur.bound === 'compute' ? 'warn' : 'neutral'}
           hint={`B_sat ≈ ${sat.toFixed(0)}`}
         />
-      </div>
+      </StatRow>
 
       <Card className="p-3">
         <LineChart
@@ -201,9 +214,7 @@ function RooflineViz({ sim }) {
               dot: [state.B, cur.stepMs],
             },
           ]}
-          markers={[
-            { x: sat, label: `B_sat ≈ ${sat.toFixed(0)}`, color: C.warn },
-          ]}
+          markers={[{ x: sat, label: `B_sat ≈ ${sat.toFixed(0)}`, color: C.warn }]}
         />
       </Card>
 
@@ -213,10 +224,7 @@ function RooflineViz({ sim }) {
           xLabel="batch size B"
           yLabel="throughput (tok/s)"
           xTicks={[1, 32, 128, 512, 1024]}
-          yTicks={[
-            Math.round(all.at(-1).throughput / 2),
-            Math.round(all.at(-1).throughput),
-          ]}
+          yTicks={[Math.round(all.at(-1).throughput / 2), Math.round(all.at(-1).throughput)]}
           series={[
             {
               label: 'throughput',
@@ -231,7 +239,7 @@ function RooflineViz({ sim }) {
 
       {/* SLO band */}
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           which batch sizes meet the {params.slaItlMs} ms ITL SLO
         </div>
         <div className="flex flex-wrap gap-1">
@@ -243,7 +251,7 @@ function RooflineViz({ sim }) {
                 className="rounded px-1 py-0.5 font-mono text-[0.55rem]"
                 style={{
                   background: revealed.has(x.B) ? (ok ? C.good : C.bad) : C.free,
-                  color: revealed.has(x.B) ? '#08090d' : C.faint,
+                  color: revealed.has(x.B) ? C.bg : C.faint,
                   outline: x.B === state.B ? `1.5px solid var(--color-accent)` : undefined,
                 }}
                 title={`B=${x.B}: ${x.stepMs.toFixed(1)} ms, ${x.throughput.toFixed(0)} tok/s — ${ok ? 'within' : 'over'} SLO`}
@@ -270,7 +278,29 @@ export default function Benchmarking() {
   const roof = useSimulation(roofline)
 
   return (
-    <>
+    <StageLayout
+      slug="benchmarking"
+      sim={roof}
+      simTitle="Roofline sweep"
+      simSubtitle="Step the batch size up a geometric ladder. The dashed lines are the two competing costs; the solid line is their max, which is what you actually pay."
+      panel={<RooflineViz sim={roof} />}
+      legend={[
+        { label: 'step latency (what you pay)', color: C.decode },
+        { label: 'compute time', color: C.prefill },
+        { label: 'weight-streaming floor', color: C.faint },
+        { label: 'meets the ITL SLO', color: C.good },
+        { label: 'violates it', color: C.bad },
+      ]}
+      simFooter={
+        <>
+          The whole free lunch of batched inference lives in the flat part of the latency curve. Try
+          a 70B model on 3.35 TB/s: <Code>B_sat</Code> moves and the flat region changes width. Then
+          set an ITL SLO and read off the largest passing batch size — that is the
+          goodput-maximizing configuration, and finding it is exactly what vLLM's auto-tune script
+          does.
+        </>
+      }
+    >
       <p>
         We've been looking at the gas particles — individual requests moving through the engine. Now
         zoom out: how do you measure whether the whole system is any good? There are two headline
@@ -283,15 +313,15 @@ export default function Benchmarking() {
         work: synthetic data generation, data cleaning, bulk classification.
       </p>
 
-      <h3>The vocabulary</h3>
+      <h2>The vocabulary</h2>
       <div className="my-5 overflow-hidden rounded-lg border border-edge">
         {METRICS.map(([k, sub, def], i) => (
           <div
             key={k}
-            className={`grid gap-1 px-4 py-2.5 sm:grid-cols-[130px_1fr] ${i % 2 ? 'bg-panel-2/30' : ''}`}
+            className={`grid gap-1 px-4 py-2.5 sm:grid-cols-[130px_1fr] ${i % 2 ? 'bg-neutral-200' : ''}`}
           >
             <div>
-              <div className="font-mono text-[0.75rem] text-accent">{k}</div>
+              <div className="font-mono text-[0.75rem] text-accent-700">{k}</div>
               <div className="font-mono text-[0.58rem] text-ink-faint">{sub}</div>
             </div>
             <p className="text-[0.8rem] leading-relaxed text-ink-dim">{def}</p>
@@ -315,52 +345,34 @@ export default function Benchmarking() {
 
       <BlogFigure src="latency_diagram.png" caption="TTFT, ITL, and end-to-end latency" max={560} />
 
-      <h3>Why the two metrics compete</h3>
+      <h2>Why the two metrics compete</h2>
       <p>
         The tradeoff is clearest in how batch size <Code>B</Code> affects a single decode step. As{' '}
-        <Code>B</Code> falls toward 1, ITL drops — there's less work in the step and your token isn't
-        competing with anyone else's. As <Code>B</Code> rises, ITL climbs because the step does more
-        FLOPs, but throughput improves because the cost of streaming the weights is amortized across
-        more tokens.
+        <Code>B</Code> falls toward 1, ITL drops — there's less work in the step and your token
+        isn't competing with anyone else's. As <Code>B</Code> rises, ITL climbs because the step
+        does more FLOPs, but throughput improves because the cost of streaming the weights is
+        amortized across more tokens.
       </p>
 
       <Callout kind="key" title="The roofline picture">
         <p>
-          Below a saturation batch size <Code>B_sat</Code>, step time is dominated by HBM bandwidth —
-          streaming weights layer by layer into on-chip memory. Step latency is nearly{' '}
+          Below a saturation batch size <Code>B_sat</Code>, step time is dominated by HBM bandwidth
+          — streaming weights layer by layer into on-chip memory. Step latency is nearly{' '}
           <strong>flat</strong>: computing 1 token or 10 takes about the same time, so those extra
-          tokens are effectively free. Beyond <Code>B_sat</Code> the kernels become compute-bound and
-          step time grows roughly with <Code>B</Code> — now every additional token adds to everyone's
-          ITL.
+          tokens are effectively free. Beyond <Code>B_sat</Code> the kernels become compute-bound
+          and step time grows roughly with <Code>B</Code> — now every additional token adds to
+          everyone's ITL.
         </p>
         <p>
-          Assumption: weight I/O dominates rather than KV-cache I/O, i.e. reasonably short sequences.
+          Assumption: weight I/O dominates rather than KV-cache I/O, i.e. reasonably short
+          sequences.
         </p>
       </Callout>
 
-      <SimFrame
-        sim={roof}
-        keys
-        title="Roofline sweep"
-        subtitle="Step the batch size up a geometric ladder. The dashed lines are the two competing costs; the solid line is their max, which is what you actually pay."
-        legend={[
-          { label: 'step latency (what you pay)', color: C.decode },
-          { label: 'compute time', color: C.prefill },
-          { label: 'weight-streaming floor', color: C.faint },
-          { label: 'meets the ITL SLO', color: C.good },
-          { label: 'violates it', color: C.bad },
-        ]}
-        footer={
-          <>
-            The whole free lunch of batched inference lives in the flat part of the blue curve. Try a
-            70B model on 3.35 TB/s: <Code>B_sat</Code> moves and the flat region changes width. Then
-            set an ITL SLO and read off the largest green batch size — that is the goodput-maximizing
-            configuration, and finding it is exactly what vLLM's auto-tune script does.
-          </>
-        }
-      >
-        <RooflineViz sim={roof} />
-      </SimFrame>
+      <p>
+        The panel on the right sweeps that ladder for you: the dashed lines are the two competing
+        costs, and the solid one is their max — the time you actually pay per step.
+      </p>
 
       <BlogFigure src="roofline.png" caption="The roofline performance model" max={520} />
 
@@ -368,15 +380,14 @@ export default function Benchmarking() {
         <p>
           A rigorous treatment has to account for kernel auto-tuning: as <Code>B</Code> grows the
           runtime may switch to a more efficient kernel for that shape, changing the achieved
-          performance <Code>P_kernel</Code>. Step latency is{' '}
-          <Code>t = FLOPs_step / P_kernel</Code>, so once <Code>P_kernel</Code> reaches{' '}
-          <Code>P_peak</Code>, more compute per step translates directly into more latency. The
-          simulator above assumes a fixed <Code>P_peak</Code>, which is why its curve is cleaner than
-          a real measurement.
+          performance <Code>P_kernel</Code>. Step latency is <Code>t = FLOPs_step / P_kernel</Code>,
+          so once <Code>P_kernel</Code> reaches <Code>P_peak</Code>, more compute per step
+          translates directly into more latency. The simulator above assumes a fixed{' '}
+          <Code>P_peak</Code>, which is why its curve is cleaner than a real measurement.
         </p>
       </Callout>
 
-      <h3>The three benchmark commands</h3>
+      <h2>The three benchmark commands</h2>
       <p>
         vLLM ships a <Code>vllm bench {'{serve,latency,throughput}'}</Code> CLI wrapping{' '}
         <Code>vllm/benchmarks/{'{server,latency,throughput}'}.py</Code>. They measure genuinely
@@ -401,7 +412,7 @@ export default function Benchmarking() {
           },
         ].map((x) => (
           <Card key={x.cmd} className="p-3.5">
-            <div className="font-mono text-[0.72rem] text-accent">{x.cmd}</div>
+            <div className="font-mono text-[0.72rem] text-accent-700">{x.cmd}</div>
             <p className="mt-1.5 text-[0.78rem] leading-relaxed text-ink-dim">{x.what}</p>
             <p className="mt-1 text-[0.75rem] leading-relaxed text-ink-faint">{x.use}</p>
           </Card>
@@ -423,9 +434,9 @@ export default function Benchmarking() {
           Raw throughput is easy to inflate: push the batch size up and the number goes up, while
           every user's ITL quietly becomes unacceptable. Goodput only counts tokens from requests
           that met their SLOs, so it cannot be gamed that way. vLLM's <strong>auto-tune</strong>{' '}
-          script drives the <Code>serve</Code> benchmark to search for argument settings satisfying a
-          target — "maximize throughput while keeping p99 E2E under 500 ms" — and returns a suggested
-          config.
+          script drives the <Code>serve</Code> benchmark to search for argument settings satisfying
+          a target — "maximize throughput while keeping p99 E2E under 500 ms" — and returns a
+          suggested config.
         </p>
       </Callout>
 
@@ -436,12 +447,15 @@ export default function Benchmarking() {
             meaningless on its own; it's a point on a curve, and you chose the point.
           </li>
           <li>
-            <strong>Benchmarking with prefix caching accidentally on.</strong> Repeat the same prompts
-            and stage 07 makes your prefill numbers fictional.
+            <strong>Benchmarking with prefix caching accidentally on.</strong> Repeat the same
+            prompts and stage 07 makes your prefill numbers fictional.
           </li>
           <li>
-            <strong>Forgetting <Code>ignore_eos</Code>.</strong> Without it, output lengths vary and
-            you're measuring the model's verbosity as much as the engine.
+            <strong>
+              Forgetting <Code>ignore_eos</Code>.
+            </strong>{' '}
+            Without it, output lengths vary and you're measuring the model's verbosity as much as
+            the engine.
           </li>
           <li>
             <strong>Using QPS=∞ to predict interactive serving.</strong> That's{' '}
@@ -451,31 +465,31 @@ export default function Benchmarking() {
         </ul>
       </Callout>
 
-      <h3>That's the whole system</h3>
+      <h2>That's the whole system</h2>
       <p>
         Working backwards from here: goodput depends on batch size; batch size depends on how many
         requests fit in the KV cache and how the scheduler spends its token budget; that depends on
-        paged blocks, prefix caching, and chunked prefill; and all of it runs on an executor that may
-        be one GPU or sixteen across two nodes. Every stage in this roadmap is ultimately a lever on
-        the curve you just swept.
+        paged blocks, prefix caching, and chunked prefill; and all of it runs on an executor that
+        may be one GPU or sixteen across two nodes. Every stage in this roadmap is ultimately a
+        lever on the curve you just swept.
       </p>
       <p>
         There's plenty the original post skips and so does this site: MLA, MoE and expert
         parallelism, encoder-decoder models, pooling/embedding models, LoRA, sliding-window
         attention, multimodal models, state-space models like Mamba and Jamba, hybrid KV-cache
-        allocation (Jenga), beam search, and experimental async scheduling. Most of them are close to
-        orthogonal to the flow described here — they attach to it more like plugins than like
+        allocation (Jenga), beam search, and experimental async scheduling. Most of them are close
+        to orthogonal to the flow described here — they attach to it more like plugins than like
         rewrites.
       </p>
 
       <Takeaways
         items={[
           'TTFT includes queueing delay; E2E = TTFT + Σ ITL; TPOT is the mean ITL. Latency and throughput are two ends of one batch-size dial, not independent goals.',
-          'Below B_sat a decode step is bandwidth-bound and its duration barely changes, so extra batched tokens are nearly free. Above B_sat it is compute-bound and each token adds to everyone\'s ITL.',
+          "Below B_sat a decode step is bandwidth-bound and its duration barely changes, so extra batched tokens are nearly free. Above B_sat it is compute-bound and each token adds to everyone's ITL.",
           'Use `latency` for best-case single-request timing, `throughput` for the offline ceiling at QPS=∞, and `serve` with Poisson arrivals for anything resembling production.',
           'Goodput — throughput that meets SLOs — is the only headline number that cannot be inflated by simply raising the batch size. Auto-tune searches for the config that maximizes it.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }

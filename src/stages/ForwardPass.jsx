@@ -1,4 +1,5 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import forward, { PHASE_INFO, phaseOf, revealed } from '../sim/forward'
 import sampling, { processLogits, VOCAB } from '../sim/sampling'
 import {
@@ -7,10 +8,11 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
-import { C, DistChart, reqColor, TokenStrip } from '../components/viz'
+import { C, DistChart, reqColor, reqInk, TokenStrip } from '../components/viz'
 
 /* ------------------------------------------------------- flattening simulator */
 
@@ -25,8 +27,8 @@ function ForwardViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="rounded-lg border border-accent-dim/40 bg-accent/[0.06] px-4 py-3">
-        <div className="font-mono text-[0.62rem] tracking-widest text-accent uppercase">
+      <div className="border-l-4 border-accent bg-accent-100 px-4 py-3">
+        <div className="font-mono text-[10px] tracking-[0.14em] text-accent-700 uppercase">
           {info.label}
         </div>
         <p className="mt-1 text-[0.82rem] leading-relaxed text-ink-dim">{info.detail}</p>
@@ -34,7 +36,7 @@ function ForwardViz({ sim }) {
 
       {/* the scheduled requests and their block tables */}
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           scheduled requests · block tables
         </div>
         <div className="space-y-1">
@@ -47,7 +49,7 @@ function ForwardViz({ sim }) {
                 className="w-14 rounded px-1 text-center text-[0.6rem]"
                 style={{
                   background: r.kind === 'prefill' ? C.prefill : C.decode,
-                  color: '#08090d',
+                  color: C.bg,
                 }}
               >
                 {r.kind}
@@ -69,14 +71,14 @@ function ForwardViz({ sim }) {
       {/* the flattened super-sequence */}
       <div>
         <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-          <span className="font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+          <span className="font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
             flattened batch · one tensor of {batch.totalTokens} tokens
           </span>
           <span className="font-mono text-[0.6rem] text-ink-faint tabular-nums">
             {n}/{batch.flat.length} built
           </span>
         </div>
-        <div className="scroll-x rounded-md border border-edge bg-[#08090d] p-3">
+        <div className="scroll-x border border-edge bg-neutral-100 p-3">
           <div className="min-w-max space-y-1.5">
             {[
               { name: 'input_ids', get: (f) => f.reqId, mono: true },
@@ -99,10 +101,15 @@ function ForwardViz({ sim }) {
                             ? `${f.reqId} · pos ${f.pos} · logical block ${f.logicalBlock} → physical ${f.physical} · offset ${f.offset} · slot ${f.slot}`
                             : 'not built yet'
                         }
-                        className="flex h-6 min-w-8 items-center justify-center rounded-[3px] font-mono text-[0.58rem] transition-all duration-200"
+                        className="flex h-6 min-w-8 items-center justify-center font-mono text-[0.58rem] transition-all duration-200"
                         style={{
-                          background: on ? reqColor(f.reqIdx, { light: row.name !== 'input_ids' }) : C.free,
-                          color: on ? '#08090d' : 'transparent',
+                          background: on
+                            ? reqColor(f.reqIdx, { light: row.name !== 'input_ids' })
+                            : C.free,
+                          // the light variant is a pale fill and needs ink, not ground
+                          color: on
+                            ? reqInk(f.reqIdx, { light: row.name !== 'input_ids' })
+                            : 'transparent',
                           outline: isGathered ? `1.5px solid var(--color-accent)` : undefined,
                           outlineOffset: 1,
                           opacity: on ? (gathering && !f.isLast ? 0.4 : 1) : 0.35,
@@ -138,7 +145,7 @@ function ForwardViz({ sim }) {
 
       {/* the slot arithmetic for the token just placed */}
       {phase === 'build' && n > 0 && (
-        <div className="rounded-md bg-panel-2/60 px-3 py-2.5 font-mono text-[0.7rem] leading-relaxed">
+        <div className="rounded-md bg-neutral-200 px-3 py-2.5 font-mono text-[0.7rem] leading-relaxed">
           {(() => {
             const f = batch.flat[n - 1]
             return (
@@ -148,13 +155,13 @@ function ForwardViz({ sim }) {
                   position {f.pos}
                 </div>
                 <div className="mt-1 text-ink-dim">
-                  slot = block_table[{f.pos} // {params.blockSize}] × {params.blockSize} + ({f.pos} %{' '}
-                  {params.blockSize})
+                  slot = block_table[{f.pos} // {params.blockSize}] × {params.blockSize} + ({f.pos}{' '}
+                  % {params.blockSize})
                 </div>
                 <div className="text-ink-dim">
                   {'     '}= block_table[{f.logicalBlock}] × {params.blockSize} + {f.offset} ={' '}
                   {f.physical} × {params.blockSize} + {f.offset} ={' '}
-                  <span className="text-accent">{f.slot}</span>
+                  <span className="text-accent-700">{f.slot}</span>
                 </div>
               </>
             )
@@ -163,7 +170,7 @@ function ForwardViz({ sim }) {
       )}
 
       {gathering && (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <StatRow>
           <StatTile label="rows in tensor" value={batch.totalTokens} />
           <StatTile label="logits rows gathered" value={batch.gatherRows.length} tone="accent" />
           <StatTile label="tokens sampled" value={batch.requests.length} tone="good" />
@@ -173,7 +180,7 @@ function ForwardViz({ sim }) {
             tone="good"
             hint="There is no padding — that is the entire point of the flat layout"
           />
-        </div>
+        </StatRow>
       )}
     </div>
   )
@@ -189,7 +196,7 @@ function SamplingViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile label="tokens survivable" value={`${survivors}/${VOCAB.length}`} tone="accent" />
         <StatTile
           label="top token mass"
@@ -202,10 +209,10 @@ function SamplingViz({ sim }) {
           value={state.last === null ? '—' : VOCAB[state.last].tok}
           tone="good"
         />
-      </div>
+      </StatRow>
 
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           probability after temperature → top_k → top_p → renormalize
         </div>
         <DistChart
@@ -221,7 +228,7 @@ function SamplingViz({ sim }) {
       </div>
 
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           what was actually drawn ({state.tick} sample{state.tick === 1 ? '' : 's'})
         </div>
         <DistChart
@@ -241,7 +248,7 @@ function SamplingViz({ sim }) {
           .map((x) => (
             <span
               key={x.tok}
-              className="rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[0.6rem] text-ink-faint ring-1 ring-edge"
+              className="rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[0.6rem] text-ink-faint border border-edge"
             >
               {x.tok}: {x.reason}
             </span>
@@ -258,18 +265,36 @@ export default function ForwardPass() {
   const samp = useSimulation(sampling)
 
   return (
-    <>
+    <StageLayout
+      slug="forward-pass"
+      sim={flat}
+      simTitle="Batch flattening & slot_mapping"
+      simSubtitle="Colour identifies the owning request. Set block_size to 4 to make the slot arithmetic easy to follow; ▲ marks a sequence boundary in cu_seqlens."
+      panel={<ForwardViz sim={flat} />}
+      legend={[
+        { label: 'prefill request', color: C.prefill },
+        { label: 'decode request', color: C.decode },
+        { label: 'not yet built', color: C.free },
+      ]}
+      simFooter={
+        <>
+          Watch the <Code>slot_mapping</Code> row: consecutive positions inside one request jump to
+          unrelated slot numbers whenever they cross a block boundary, because the next logical
+          block lives somewhere else physically. The kernel resolves that indirection itself — which
+          is what "paged attention" names.
+        </>
+      }
+    >
       <p>
-        The scheduler has decided who runs. Now the model executor's{' '}
-        <Code>execute_model</Code> delegates to the <Code>Worker</Code>, which delegates to the{' '}
-        model runner — and five things happen.
+        The scheduler has decided who runs. Now the model executor's <Code>execute_model</Code>{' '}
+        delegates to the <Code>Worker</Code>, which delegates to the model runner — and five things
+        happen.
       </p>
 
       <ol>
         <li>
-          <strong>Update states</strong> — prune finished requests from{' '}
-          <Code>input_batch</Code>; refresh forward-pass metadata, above all each request's
-          KV-cache block list.
+          <strong>Update states</strong> — prune finished requests from <Code>input_batch</Code>;
+          refresh forward-pass metadata, above all each request's KV-cache block list.
         </li>
         <li>
           <strong>Prepare inputs</strong> — copy buffers CPU→GPU, compute positions, build{' '}
@@ -288,41 +313,19 @@ export default function ForwardPass() {
         </li>
       </ol>
 
-      <h3>One flat tensor, no padding</h3>
+      <h2>One flat tensor, no padding</h2>
       <p>
         This is the mechanical trick that makes continuous batching possible. Rather than stacking
         sequences into a padded rectangle, every scheduled request's new tokens are{' '}
-        <strong>concatenated into a single long sequence</strong>. A prefill contributes as many rows
-        as its prompt is long; a decode contributes exactly one. Position indices and the attention
-        metadata guarantee each sequence attends only to its own tokens.
+        <strong>concatenated into a single long sequence</strong>. A prefill contributes as many
+        rows as its prompt is long; a decode contributes exactly one. Position indices and the
+        attention metadata guarantee each sequence attends only to its own tokens.
       </p>
       <p>
         Because there is no rectangle, there is nothing to keep intact between steps — the batch can
-        have a completely different composition every step, at zero cost. Step the simulator to
-        watch the arrays get built one token at a time.
+        have a completely different composition every step, at zero cost. Step the panel on the
+        right to watch the arrays get built one token at a time.
       </p>
-
-      <SimFrame
-        sim={flat}
-        keys
-        title="Batch flattening & slot_mapping"
-        subtitle="Colour identifies the owning request. Set block_size to 4 to make the slot arithmetic easy to follow; ▲ marks a sequence boundary in cu_seqlens."
-        legend={[
-          { label: 'prefill request', color: C.prefill },
-          { label: 'decode request', color: C.decode },
-          { label: 'not yet built', color: C.free },
-        ]}
-        footer={
-          <>
-            Watch the <Code>slot_mapping</Code> row: consecutive positions inside one request jump to
-            unrelated slot numbers whenever they cross a block boundary, because the next logical
-            block lives somewhere else physically. The kernel resolves that indirection itself —
-            which is what "paged attention" names.
-          </>
-        }
-      >
-        <ForwardViz sim={flat} />
-      </SimFrame>
 
       <BlogFigure
         src="fwd_pass.png"
@@ -338,7 +341,7 @@ export default function ForwardPass() {
         </p>
       </Callout>
 
-      <h3>Eager vs captured</h3>
+      <h2>Eager vs captured</h2>
       <p>
         The forward pass itself runs in one of two modes. <strong>Eager mode</strong> is a standard
         PyTorch forward pass. <strong>Captured mode</strong> replays a <strong>CUDA graph</strong>{' '}
@@ -352,7 +355,7 @@ export default function ForwardPass() {
         gets faster and more VRAM stays free, at the cost of per-step latency.
       </p>
 
-      <h3>Sampling</h3>
+      <h2>Sampling</h2>
       <p>
         Finally, logits become a token. The knobs compose in a fixed order — temperature reshapes
         the distribution, then <Code>top_k</Code> and <Code>top_p</Code> delete part of it, then
@@ -400,6 +403,6 @@ gather rows   [            4        7     8  9 10]  # one logits row per request
           'CUDA graphs cut kernel-launch overhead, which matters most for decode steps where per-kernel work is tiny. --enforce-eager trades that latency back for faster startup and more free VRAM.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }
