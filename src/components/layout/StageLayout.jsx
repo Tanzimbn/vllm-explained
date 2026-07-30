@@ -6,7 +6,7 @@ import { SimPanel } from '../ui'
 /*
  * The two-pane stage: prose on the left, the stage's primary simulator pinned in
  * a sticky pane on the right so it stays in view for the whole read. "Focus
- * simulator" collapses the prose column to zero and gives the pane the width.
+ * simulator" hands the pane the full width.
  *
  * `slug` is passed in explicitly rather than read from useParams(), because the
  * render tests mount each page component bare, with no matching route.
@@ -16,9 +16,28 @@ import { SimPanel } from '../ui'
 
 const MICRO = 'font-mono text-[10px] tracking-[0.14em] uppercase'
 
-const PANES = {
-  open: 'lg:grid-cols-[minmax(0,1.06fr)_minmax(0,1fr)]',
-  focus: 'lg:grid-cols-[0px_minmax(0,1fr)]',
+const ARTICLE =
+  'prose-stage order-2 min-w-0 overflow-hidden px-[18px] pt-7 pb-11 sm:px-8 lg:order-1 lg:border-r-2 lg:border-edge lg:pt-8 lg:pr-10 lg:pb-14'
+
+/**
+ * Grid classes for the two focus states, as a pure function so both can be
+ * asserted without a DOM (the test environment is `node`).
+ *
+ * Focus mode drops to a single column AND takes the prose out of flow. Merely
+ * collapsing the first track to 0px leaves a visible sliver: with
+ * `box-sizing: border-box`, a zero-width track still cannot shrink the article's
+ * horizontal padding or its 2px rule below their own size.
+ *
+ * `lg:hidden` is safe because lg is also the only width at which the focus
+ * toggle is reachable — narrowing the window brings the prose back.
+ */
+export function paneLayout(focus) {
+  return {
+    main: `grid ${
+      focus ? 'lg:grid-cols-[minmax(0,1fr)]' : 'lg:grid-cols-[minmax(0,1.06fr)_minmax(0,1fr)]'
+    }`,
+    article: focus ? `${ARTICLE} lg:hidden` : ARTICLE,
+  }
 }
 
 function PrevNext({ slug }) {
@@ -64,12 +83,13 @@ export default function StageLayout({
   children,
 }) {
   const [focus, setFocus] = useState(false)
+  const pane = paneLayout(focus)
 
   return (
-    <main className={`grid ${focus ? PANES.focus : PANES.open}`}>
+    <main className={pane.main}>
       {/* Prose. On mobile this follows the simulator, so the instrument sits
           next to the header that introduces it rather than below the whole read. */}
-      <article className="prose-stage order-2 min-w-0 overflow-hidden px-[18px] pt-7 pb-11 sm:px-8 lg:order-1 lg:border-r-2 lg:border-edge lg:pt-8 lg:pr-10 lg:pb-14">
+      <article className={pane.article}>
         <div className="max-w-[70ch]">
           {children}
           <PrevNext slug={slug} />

@@ -109,6 +109,23 @@ describe('every stage is laid out as prose + a pinned simulator', () => {
     })
   }
 
+  it('gives the pane the full width in focus mode, with no prose sliver left', async () => {
+    const { paneLayout } = await import('../components/layout/StageLayout')
+    const open = paneLayout(false)
+    const focus = paneLayout(true)
+
+    // open: two tracks, prose in flow
+    expect(open.main).toContain('1.06fr')
+    expect(open.article).not.toContain('lg:hidden')
+
+    // focus: one track, and the prose out of flow entirely. Collapsing the track
+    // to 0px is not enough — border-box keeps the article's padding and 2px rule
+    // on screen as a sliver.
+    expect(focus.main).toContain('lg:grid-cols-[minmax(0,1fr)]')
+    expect(focus.main).not.toContain('0px')
+    expect(focus.article).toContain('lg:hidden')
+  })
+
   it('reserves SimFrame for the stages that have a second simulator', async () => {
     const { readdirSync, readFileSync } = await import('node:fs')
     const { fileURLToPath } = await import('node:url')
