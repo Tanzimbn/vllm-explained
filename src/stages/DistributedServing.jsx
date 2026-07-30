@@ -1,4 +1,5 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import distributed, { balanceStats, score } from '../sim/distributed'
 import {
   BlogFigure,
@@ -7,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
@@ -20,7 +22,7 @@ function LbViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile
           label="mean imbalance"
           value={stats.mean.toFixed(2)}
@@ -34,16 +36,16 @@ function LbViz({ sim }) {
           value={stats.spread}
           hint="Difference in requests finished between the best and worst replica"
         />
-      </div>
+      </StatRow>
 
       {/* the two nodes and their engines */}
       {[0, 1].map((node) => (
         <div key={node}>
           <div className="mb-2 flex items-baseline gap-2">
-            <span className="font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+            <span className="font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
               node {node} · 8×H100
             </span>
-            <span className="font-mono text-[0.58rem] text-ink-faint/70">
+            <span className="font-mono text-[0.58rem] text-neutral-600">
               {node === 0 ? '--headless' : 'API server + DPCoordinator'}
             </span>
           </div>
@@ -66,7 +68,9 @@ function LbViz({ sim }) {
                     <div className="flex items-baseline justify-between">
                       <span className="font-mono text-[0.68rem] text-ink">
                         {e.id}{' '}
-                        <span className="text-[0.55rem] text-ink-faint">DPEngineCoreProc · TP=4</span>
+                        <span className="text-[0.55rem] text-ink-faint">
+                          DPEngineCoreProc · TP=4
+                        </span>
                       </span>
                       <span
                         className="font-mono text-[0.65rem] tabular-nums"
@@ -77,12 +81,14 @@ function LbViz({ sim }) {
                     </div>
                     <div className="mt-1.5 space-y-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="w-14 font-mono text-[0.55rem] text-ink-faint">running</span>
+                        <span className="w-14 font-mono text-[0.55rem] text-ink-faint">
+                          running
+                        </span>
                         <div className="flex gap-[3px]">
                           {Array.from({ length: params.capacity }, (_, i) => (
                             <span
                               key={i}
-                              className="h-3 w-3 rounded-[2px]"
+                              className="h-3 w-3"
                               style={{
                                 background: i < e.running.length ? C.decode : C.free,
                               }}
@@ -94,15 +100,17 @@ function LbViz({ sim }) {
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5">
-                        <span className="w-14 font-mono text-[0.55rem] text-ink-faint">waiting</span>
+                        <span className="w-14 font-mono text-[0.55rem] text-ink-faint">
+                          waiting
+                        </span>
                         <div className="flex flex-wrap gap-[3px]">
                           {e.waiting.length === 0 ? (
-                            <span className="font-mono text-[0.55rem] text-ink-faint/50">—</span>
+                            <span className="font-mono text-[0.55rem] text-neutral-500">—</span>
                           ) : (
                             e.waiting.map((id) => (
                               <span
                                 key={id}
-                                className="h-3 w-3 rounded-[2px]"
+                                className="h-3 w-3"
                                 style={{ background: C.prefill }}
                                 title={id}
                               />
@@ -125,8 +133,8 @@ function LbViz({ sim }) {
       ))}
 
       {/* the routing decision */}
-      <div className="rounded-lg border border-edge bg-panel-2/40 px-3 py-2.5">
-        <div className="mb-1.5 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+      <div className="rounded-lg border border-edge bg-neutral-200 px-3 py-2.5">
+        <div className="mb-1.5 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           get_core_engine_for_request
         </div>
         {state.lastPick ? (
@@ -138,14 +146,13 @@ function LbViz({ sim }) {
               </>
             ) : (
               <>
-                {params.policy} chose{' '}
-                <span style={{ color: C.warn }}>{state.lastPick.engine}</span>{' '}
+                {params.policy} chose <span style={{ color: C.warn }}>{state.lastPick.engine}</span>{' '}
                 <span className="text-ink-faint">(load ignored)</span>
               </>
             )}
           </div>
         ) : (
-          <div className="font-mono text-[0.65rem] text-ink-faint/60">no arrivals this step</div>
+          <div className="font-mono text-[0.65rem] text-neutral-500">no arrivals this step</div>
         )}
       </div>
 
@@ -157,8 +164,8 @@ function LbViz({ sim }) {
         sublabel={`current gap ${state.imbalanceHistory.at(-1) ?? 0}`}
       />
 
-      <p className="rounded-md bg-panel-2/50 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
-        <span className="text-accent">tick {state.tick}:</span> {state.note}
+      <p className="rounded-md bg-neutral-200 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
+        <span className="text-accent-700">tick {state.tick}:</span> {state.note}
       </p>
     </div>
   )
@@ -168,14 +175,34 @@ export default function DistributedServing() {
   const sim = useSimulation(distributed)
 
   return (
-    <>
+    <StageLayout
+      slug="distributed-serving"
+      sim={sim}
+      simTitle="Load balancer router"
+      simSubtitle="Four DP replicas across two nodes. Requests arrive with skewed costs — mostly short, occasionally very long. The engine with the lowest score gets the next one."
+      legend={[
+        { label: 'running slot', color: C.decode },
+        { label: 'queued request', color: C.prefill },
+        { label: 'chosen this step', color: C.good },
+        { label: 'free capacity', color: C.free },
+      ]}
+      simFooter={
+        <>
+          Switch between <Code>vLLM score</Code>, <Code>round-robin</Code>, and <Code>random</Code>{' '}
+          at a high cost skew. Round-robin distributes request <em>counts</em> perfectly and load
+          terribly — it cannot see that it just handed E1 a request four times longer than the last.
+          Watch the mean-imbalance and completion-spread numbers diverge.
+        </>
+      }
+      panel={<LbViz sim={sim} />}
+    >
       <p>
         We can now run a model as large as the hardware allows. The remaining step is to{' '}
         <em>scale out</em>: replicate the whole engine (data parallelism), put one or more API
         servers in front, and add just enough coordination to route traffic sensibly.
       </p>
 
-      <h3>A concrete deployment</h3>
+      <h2>A concrete deployment</h2>
       <p>
         Two H100 nodes, four vLLM engines, model requiring TP=4. That's TP=4 × DP=4 = 16 GPUs, two
         replicas per node. One node runs headless — engines only, no API server. The other runs the
@@ -211,12 +238,12 @@ vllm serve <model-name> \\
   --data-parallel-rpc-port 13345`}
       />
 
-      <h3>The backend: DPEngineCoreProc</h3>
+      <h2>The backend: DPEngineCoreProc</h2>
       <p>
         On each node a <Code>CoreEngineProcManager</Code> launches{' '}
         <Code>--data-parallel-size-local</Code> processes, each running{' '}
-        <Code>EngineCoreProc.run_engine_core</Code>, which creates a{' '}
-        <Code>DPEngineCoreProc</Code> and enters its busy loop. Startup does:
+        <Code>EngineCoreProc.run_engine_core</Code>, which creates a <Code>DPEngineCoreProc</Code>{' '}
+        and enters its busy loop. Startup does:
       </p>
       <ol>
         <li>
@@ -227,29 +254,26 @@ vllm serve <model-name> \\
           handshake with the frontend over a <Code>DEALER</Code> ZMQ socket and receive coordination
           addresses;
         </li>
-        <li>
-          initialize the DP group (e.g. NCCL backend);
-        </li>
+        <li>initialize the DP group (e.g. NCCL backend);</li>
         <li>
           initialize the <Code>EngineCore</Code> with a <Code>MultiProcExecutor</Code> — the TP=4
           machinery from stage 11;
         </li>
         <li>
-          start an <strong>input</strong> daemon thread and an <strong>output</strong> daemon thread,
-          then wait on a <Code>ready_event</Code> until all input threads across all four processes
-          (spanning both nodes) have finished the handshake;
+          start an <strong>input</strong> daemon thread and an <strong>output</strong> daemon
+          thread, then wait on a <Code>ready_event</Code> until all input threads across all four
+          processes (spanning both nodes) have finished the handshake;
         </li>
         <li>
-          send a "ready" message to the frontend with metadata such as{' '}
-          <Code>num_gpu_blocks</Code>;
+          send a "ready" message to the frontend with metadata such as <Code>num_gpu_blocks</Code>;
         </li>
         <li>all three threads enter their steady-state busy loops.</li>
       </ol>
 
       <Callout kind="key" title="Three threads, one job each">
         <p>
-          <strong>Input thread</strong> — blocks on the input socket; on receipt decodes the payload,
-          does <Code>input_queue.put_nowait(...)</Code>, and goes back to blocking.
+          <strong>Input thread</strong> — blocks on the input socket; on receipt decodes the
+          payload, does <Code>input_queue.put_nowait(...)</Code>, and goes back to blocking.
         </p>
         <p>
           <strong>Main thread</strong> — wakes on <Code>input_queue.get(...)</Code>, feeds the
@@ -258,8 +282,8 @@ vllm serve <model-name> \\
           underneath — pushing results to <Code>output_queue</Code>.
         </p>
         <p>
-          <strong>Output thread</strong> — wakes on <Code>output_queue.get(...)</Code>, sends results
-          back to the API server, resumes blocking.
+          <strong>Output thread</strong> — wakes on <Code>output_queue.get(...)</Code>, sends
+          results back to the API server, resumes blocking.
         </p>
       </Callout>
 
@@ -268,7 +292,7 @@ vllm serve <model-name> \\
         caption="Four DP replicas, each a DPEngineCoreProc with main, input, and output threads"
       />
 
-      <h3>The frontend, and the routing decision</h3>
+      <h2>The frontend, and the routing decision</h2>
       <p>
         The API server node instantiates an <Code>AsyncLLM</Code> — an asyncio wrapper around the
         engine — which creates a <Code>DPLBAsyncMPClient</Code> (data-parallel, load-balancing,
@@ -295,38 +319,17 @@ vllm serve <model-name> \\
 chosen = min(engines, key=score)`}
       />
 
-      <SimFrame
-        sim={sim}
-        keys
-        title="Load balancer router"
-        subtitle="Four DP replicas across two nodes. Requests arrive with skewed costs — mostly short, occasionally very long. The engine with the lowest score gets the next one."
-        legend={[
-          { label: 'running slot', color: C.decode },
-          { label: 'queued request', color: C.prefill },
-          { label: 'chosen this step', color: C.good },
-          { label: 'free capacity', color: C.free },
-        ]}
-        footer={
-          <>
-            Switch between <Code>vLLM score</Code>, <Code>round-robin</Code>, and{' '}
-            <Code>random</Code> at a high cost skew. Round-robin distributes request{' '}
-            <em>counts</em> perfectly and load terribly — it cannot see that it just handed E1 a
-            request four times longer than the last. Watch the mean-imbalance and completion-spread
-            numbers diverge.
-          </>
-        }
-      >
-        <LbViz sim={sim} />
-      </SimFrame>
-
-      <h3>The full request lifecycle</h3>
+      <h2>The full request lifecycle</h2>
       <Card className="my-5 p-4">
         <ol className="space-y-1.5 text-[0.82rem] leading-relaxed text-ink-dim">
           <li>
             <Code>curl</Code> POSTs to <Code>/v1/completions</Code>; the request hits{' '}
             <Code>OpenAIServingCompletion.create_completion</Code>.
           </li>
-          <li>The prompt is tokenized asynchronously and metadata prepared (request id, sampling params, timestamp).</li>
+          <li>
+            The prompt is tokenized asynchronously and metadata prepared (request id, sampling
+            params, timestamp).
+          </li>
           <li>
             <Code>AsyncLLM.generate</Code> is called, following the same flow as the synchronous
             engine, eventually reaching <Code>DPAsyncMPClient.add_request_async</Code>.
@@ -364,9 +367,9 @@ chosen = min(engines, key=score)`}
           <strong>Dummy steps.</strong> If <em>any</em> DP replica has work, <em>all</em> replicas
           execute a forward step — idle ones run a dummy step to participate in required
           synchronization points, so they never block the busy replica. Strictly this is only
-          necessary for MoE models, where expert layers form an EP/TP group while attention stays DP;
-          it's currently always done under DP because non-MoE built-in DP has limited use anyway (you
-          could just run independent vLLMs behind a normal load balancer).
+          necessary for MoE models, where expert layers form an EP/TP group while attention stays
+          DP; it's currently always done under DP because non-MoE built-in DP has limited use anyway
+          (you could just run independent vLLMs behind a normal load balancer).
         </p>
         <p>
           Adding more API servers needs nothing special: load balancing then happens at the
@@ -382,6 +385,6 @@ chosen = min(engines, key=score)`}
           'Dummy steps keep idle replicas participating in collective sync points so they cannot stall a busy one; DP waves track the idle/active transitions for coordination and metrics.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }

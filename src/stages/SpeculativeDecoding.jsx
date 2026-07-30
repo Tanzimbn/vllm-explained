@@ -1,11 +1,6 @@
 import { useSimulation } from '../hooks/useSimulation'
-import specDecode, {
-  METHOD_INFO,
-  pDraft,
-  pTarget,
-  speedup,
-  VOCAB,
-} from '../sim/specDecode'
+import StageLayout from '../components/layout/StageLayout'
+import specDecode, { METHOD_INFO, pDraft, pTarget, speedup, VOCAB } from '../sim/specDecode'
 import {
   BlogFigure,
   Callout,
@@ -13,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
@@ -27,7 +23,7 @@ function SpecViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile
           label="speedup"
           value={`${sp.factor.toFixed(2)}×`}
@@ -42,12 +38,12 @@ function SpecViz({ sim }) {
         />
         <StatTile label="tokens / round" value={sp.tokensPerRound.toFixed(2)} tone="accent" />
         <StatTile label="free bonus tokens" value={state.bonusTotal} tone="good" />
-      </div>
+      </StatRow>
 
       {/* the current round */}
       {r && (
-        <div className="rounded-lg border border-edge bg-panel-2/40 px-4 py-3">
-          <div className="mb-2.5 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="rounded-lg border border-edge bg-neutral-200 px-4 py-3">
+          <div className="mb-2.5 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
             round {state.tick} — draft, verify, accept/reject
           </div>
           <div className="scroll-x">
@@ -129,7 +125,7 @@ function SpecViz({ sim }) {
           </div>
           <div className="mt-2.5 font-mono text-[0.68rem] text-ink-dim">
             {r.acceptedCount}/{params.k} accepted → {r.emitted.length} token(s) emitted this round:{' '}
-            <span className="text-accent">{r.emitted.map((t) => VOCAB[t]).join(' ')}</span>
+            <span className="text-accent-700">{r.emitted.map((t) => VOCAB[t]).join(' ')}</span>
           </div>
         </div>
       )}
@@ -137,7 +133,7 @@ function SpecViz({ sim }) {
       {/* distributions */}
       <div className="grid gap-4 sm:grid-cols-2">
         <div>
-          <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+          <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
             target vs draft distribution
           </div>
           <DistChart
@@ -150,7 +146,7 @@ function SpecViz({ sim }) {
           />
         </div>
         <div>
-          <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+          <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
             emitted first-token frequency vs p_target
           </div>
           <DistChart
@@ -163,7 +159,8 @@ function SpecViz({ sim }) {
           />
           <p className="mt-1 text-[0.7rem] leading-relaxed text-ink-faint">
             This should converge on the blue target distribution above, no matter how bad the draft
-            is. That equivalence is the correctness guarantee — and it is asserted in the test suite.
+            is. That equivalence is the correctness guarantee — and it is asserted in the test
+            suite.
           </p>
         </div>
       </div>
@@ -207,7 +204,27 @@ export default function SpeculativeDecoding() {
   const info = METHOD_INFO[sim.params.method]
 
   return (
-    <>
+    <StageLayout
+      slug="speculative-decoding"
+      sim={sim}
+      simTitle="Draft / verify / reject"
+      simSubtitle="Each tick is one full speculation round. The ratio shown per draft token is p_target / p_draft — the actual acceptance test."
+      legend={[
+        { label: 'accepted', color: C.good },
+        { label: 'rejected', color: C.bad },
+        { label: 'resampled from residual', color: C.warn },
+        { label: 'free bonus token', color: C.cached },
+      ]}
+      simFooter={
+        <>
+          Let it run a few hundred rounds and watch the purple histogram settle onto the blue target
+          distribution — <em>at any agreement setting</em>, including 0. Then drag agreement down
+          and watch the speedup collapse while the distribution stays correct. That is the whole
+          character of the technique: it trades throughput risk for zero quality risk.
+        </>
+      }
+      panel={<SpecViz sim={sim} />}
+    >
       <p>
         Decode is memory-bandwidth-bound: every step streams the entire model from HBM to produce
         one token. The arithmetic units are mostly idle. Speculative decoding exploits that slack —
@@ -215,24 +232,25 @@ export default function SpeculativeDecoding() {
         tokens in the same pass.
       </p>
 
-      <h3>Draft, verify, and be careful about it</h3>
+      <h2>Draft, verify, and be careful about it</h2>
       <p>
         A small, cheap <strong>draft model</strong> proposes <Code>k</Code> tokens. The large{' '}
-        <strong>target model</strong> then runs <em>once</em> over context + those{' '}
-        <Code>k</Code> tokens, producing probabilities for all <Code>k</Code> positions plus one
-        extra — so <Code>k+1</Code> candidates from a single expensive pass.
+        <strong>target model</strong> then runs <em>once</em> over context + those <Code>k</Code>{' '}
+        tokens, producing probabilities for all <Code>k</Code> positions plus one extra — so{' '}
+        <Code>k+1</Code> candidates from a single expensive pass.
       </p>
       <p>Then, left to right over the drafts:</p>
       <ul>
         <li>
-          if the target's probability for the drafted token is <strong>≥</strong> the draft's, accept
-          it;
+          if the target's probability for the drafted token is <strong>≥</strong> the draft's,
+          accept it;
         </li>
         <li>
-          otherwise accept it with probability{' '}
-          <Code>p_target(token) / p_draft(token)</Code>;
+          otherwise accept it with probability <Code>p_target(token) / p_draft(token)</Code>;
         </li>
-        <li>stop at the first rejection, or accept all <Code>k</Code>.</li>
+        <li>
+          stop at the first rejection, or accept all <Code>k</Code>.
+        </li>
       </ul>
       <p>
         If a rejection happens, the replacement token is sampled from a{' '}
@@ -252,33 +270,10 @@ export default function SpeculativeDecoding() {
         </p>
       </Callout>
 
-      <SimFrame
-        sim={sim}
-        keys
-        title="Draft / verify / reject"
-        subtitle="Each tick is one full speculation round. The ratio shown per draft token is p_target / p_draft — the actual acceptance test."
-        legend={[
-          { label: 'accepted', color: C.good },
-          { label: 'rejected', color: C.bad },
-          { label: 'resampled from residual', color: C.warn },
-          { label: 'free bonus token', color: C.cached },
-        ]}
-        footer={
-          <>
-            Let it run a few hundred rounds and watch the purple histogram settle onto the blue
-            target distribution — <em>at any agreement setting</em>, including 0. Then drag agreement
-            down and watch the speedup collapse while the distribution stays correct. That is the
-            whole character of the technique: it trades throughput risk for zero quality risk.
-          </>
-        }
-      >
-        <SpecViz sim={sim} />
-      </SimFrame>
-
       <BlogFigure src="specdec_pt1.png" caption="The drafting stage" />
       <BlogFigure src="specdec_pt2.png" caption="Verification and rejection sampling" />
 
-      <h3>Why k has a sweet spot</h3>
+      <h2>Why k has a sweet spot</h2>
       <p>
         Acceptance compounds: the chance of getting the <Code>j</Code>th draft token accepted falls
         off roughly geometrically, so each additional speculative token contributes less than the
@@ -296,14 +291,14 @@ export default function SpeculativeDecoding() {
         </p>
       </Card>
 
-      <h3>Where the drafts come from</h3>
+      <h2>Where the drafts come from</h2>
       <p>
         vLLM V1 does not support using a separate full LLM as the drafter. Instead it implements
         three faster — but less accurate — proposal schemes. Switch the method knob to read about
         each.
       </p>
       <Card className="my-5 p-4">
-        <div className="font-mono text-[0.7rem] text-accent">{info.title}</div>
+        <div className="font-mono text-[0.7rem] text-accent-700">{info.title}</div>
         <p className="mt-1.5 text-[0.82rem] leading-relaxed text-ink-dim">{info.detail}</p>
         <div className="mt-2.5 space-y-1 text-[0.78rem]">
           <div style={{ color: C.good }}>+ {info.good}</div>
@@ -327,12 +322,12 @@ llm = LLM(
 outputs = llm.generate(prompts, sampling_params)`}
       />
 
-      <h3>How it lands in the engine</h3>
+      <h2>How it lands in the engine</h2>
       <p>
         The setup happens in the two worker procedures from stage 02: <strong>init device</strong>{' '}
         creates the drafter (e.g. <Code>NgramProposer</Code>) and a <Code>rejection_sampler</Code>{' '}
-        (partly written in Triton), and <strong>load model</strong> loads the draft weights — a no-op
-        for n-gram. Then per request:
+        (partly written in Triton), and <strong>load model</strong> loads the draft weights — a
+        no-op for n-gram. Then per request:
       </p>
       <ol>
         <li>run a normal prefill with the large model;</li>
@@ -351,8 +346,8 @@ outputs = llm.generate(prompts, sampling_params)`}
           copy the drafts into <Code>input_batch.token_ids_cpu</Code> to form context + draft;
         </li>
         <li>
-          build metadata with <Code>_calc_spec_decode_metadata</Code> and run the target forward pass
-          over the draft positions;
+          build metadata with <Code>_calc_spec_decode_metadata</Code> and run the target forward
+          pass over the draft positions;
         </li>
         <li>
           instead of ordinary sampling, run the <Code>rejection_sampler</Code> to produce{' '}
@@ -383,6 +378,6 @@ outputs = llm.generate(prompts, sampling_params)`}
           'vLLM V1 offers n-gram (free, great on repetitive text), EAGLE (trained MLP draft, high acceptance), and Medusa (parallel heads). It is a latency win when compute is spare, and can reduce throughput when it is not.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }

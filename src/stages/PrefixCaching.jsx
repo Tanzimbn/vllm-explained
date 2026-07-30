@@ -1,4 +1,5 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import prefixCache, { BLOCK, PHASE_TEXT } from '../sim/prefixCache'
 import {
   BlogFigure,
@@ -6,6 +7,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
@@ -30,7 +32,7 @@ function PrefixViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile
           label="prefill tokens saved"
           value={state.totalSaved}
@@ -43,13 +45,17 @@ function PrefixViz({ sim }) {
           unit="%"
           tone={saveRate > 50 ? 'good' : saveRate > 20 ? 'warn' : 'neutral'}
         />
-        <StatTile label="blocks in cache map" value={Object.keys(state.cache).length} tone="accent" />
-      </div>
+        <StatTile
+          label="blocks in cache map"
+          value={Object.keys(state.cache).length}
+          tone="accent"
+        />
+      </StatRow>
 
       {/* current phase */}
-      <div className="rounded-lg border border-accent-dim/40 bg-accent/[0.06] px-4 py-3">
+      <div className="rounded-lg border border-accent bg-accent/[0.06] px-4 py-3">
         <div className="flex flex-wrap items-baseline gap-2">
-          <span className="font-mono text-[0.62rem] tracking-widest text-accent uppercase">
+          <span className="font-mono text-[0.62rem] tracking-widest text-accent-700 uppercase">
             {state.phase === 'finished' ? 'done' : state.phase}
           </span>
           {r && (
@@ -66,7 +72,7 @@ function PrefixViz({ sim }) {
       {/* the current request's block hashes */}
       {r && r.blockHashes.length > 0 && (
         <div>
-          <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+          <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
             {r.id} · block hashes (chained)
           </div>
           <div className="scroll-x flex gap-1.5">
@@ -96,7 +102,10 @@ function PrefixViz({ sim }) {
                   >
                     {bh.partial ? 'no hash' : bh.hash}
                   </span>
-                  <span className="font-mono text-[0.55rem]" style={{ color: isHit ? C.cached : C.faint }}>
+                  <span
+                    className="font-mono text-[0.55rem]"
+                    style={{ color: isHit ? C.cached : C.faint }}
+                  >
                     {bh.partial ? 'uncacheable' : isHit ? '✓ HIT' : 'miss'}
                   </span>
                 </div>
@@ -109,7 +118,7 @@ function PrefixViz({ sim }) {
       {/* physical pool */}
       {poolBlocks.length > 0 && (
         <div>
-          <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+          <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
             physical blocks · badge = refcount
           </div>
           <BlockGrid blocks={poolBlocks} cols={12} size={28} />
@@ -118,7 +127,7 @@ function PrefixViz({ sim }) {
 
       {/* per-request ledger */}
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           per-request prefill cost
         </div>
         <div className="space-y-1">
@@ -154,8 +163,8 @@ function PrefixViz({ sim }) {
         </div>
       </div>
 
-      <p className="rounded-md bg-panel-2/50 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
-        <span className="text-accent">tick {state.tick}:</span> {state.note}
+      <p className="rounded-md bg-neutral-200 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
+        <span className="text-accent-700">tick {state.tick}:</span> {state.note}
       </p>
     </div>
   )
@@ -165,7 +174,27 @@ export default function PrefixCaching() {
   const sim = useSimulation(prefixCache)
 
   return (
-    <>
+    <StageLayout
+      slug="prefix-caching"
+      sim={sim}
+      simTitle="Two requests sharing a prefix"
+      simSubtitle="Each request walks the full lifecycle one phase per tick. Requests share the leading prefix and differ afterwards — exactly the blog's long_prefix example."
+      legend={[
+        { label: 'cache hit / reclaimed', color: C.cached },
+        { label: 'computed this request', color: C.prefill },
+        { label: 'freed but still reclaimable', color: C.partial },
+        { label: 'allocated, no hash yet', color: C.alloc },
+      ]}
+      simFooter={
+        <>
+          Watch <Code>R0</Code> get zero hits and pay full price, then <Code>R1</Code> and{' '}
+          <Code>R2</Code> reclaim its blocks for free. Then set the shared prefix to a value that
+          isn't a multiple of {BLOCK} — the trailing partial block turns yellow and stays
+          uncacheable forever, so those tokens are recomputed on every single request.
+        </>
+      }
+      panel={<PrefixViz sim={sim} />}
+    >
       <p>
         Real traffic repeats itself. A system prompt, a few-shot preamble, a document every question
         is asked about — the same leading tokens arrive over and over. Recomputing their KV every
@@ -173,7 +202,7 @@ export default function PrefixCaching() {
         to avoid it.
       </p>
 
-      <h3>Blocks get identities</h3>
+      <h2>Blocks get identities</h2>
       <p>
         Every <em>complete</em> block of {BLOCK} tokens is given a hash combining{' '}
         <strong>the previous block's hash</strong>, the current block's token ids, and optional
@@ -192,43 +221,20 @@ export default function PrefixCaching() {
         </p>
       </Callout>
 
-      <h3>The lookup</h3>
+      <h2>The lookup</h2>
       <p>
         During scheduling, <Code>kv_cache_manager.get_computed_blocks</Code> calls{' '}
         <Code>hash_request_tokens</Code> and then <Code>find_longest_cache_hit</Code>, which checks
         those hashes against <Code>cached_block_hash_to_block</Code> and stops at the first miss.
-        Whatever was hit doesn't need <Code>allocate_slots</Code> to find fresh blocks — those blocks
-        already hold valid KV.
+        Whatever was hit doesn't need <Code>allocate_slots</Code> to find fresh blocks — those
+        blocks already hold valid KV.
       </p>
-
-      <SimFrame
-        sim={sim}
-        keys
-        title="Two requests sharing a prefix"
-        subtitle="Each request walks the full lifecycle one phase per tick. Requests share the leading prefix and differ afterwards — exactly the blog's long_prefix example."
-        legend={[
-          { label: 'cache hit / reclaimed', color: C.cached },
-          { label: 'computed this request', color: C.prefill },
-          { label: 'freed but still reclaimable', color: C.partial },
-          { label: 'allocated, no hash yet', color: C.alloc },
-        ]}
-        footer={
-          <>
-            Watch <Code>R0</Code> get zero hits and pay full price, then <Code>R1</Code> and{' '}
-            <Code>R2</Code> reclaim its blocks for free. Then set the shared prefix to a value that
-            isn't a multiple of {BLOCK} — the trailing partial block turns yellow and stays
-            uncacheable forever, so those tokens are recomputed on every single request.
-          </>
-        }
-      >
-        <PrefixViz sim={sim} />
-      </SimFrame>
 
       <BlogFigure src="prefix_pt1.png" caption="First request: hashes computed, no hits found" />
       <BlogFigure src="prefix_pt2.png" caption="Blocks allocated and registered in the cache map" />
       <BlogFigure src="prefix_pt3.png" caption="Second request: all prefix blocks hit and reused" />
 
-      <h3>Why freed blocks are still useful</h3>
+      <h2>Why freed blocks are still useful</h2>
       <p>
         This is the subtle and clever part. When the first request finishes, its blocks go back to{' '}
         <Code>free_block_queue</Code> and their refcount drops to zero — but they{' '}
@@ -292,6 +298,6 @@ outputs = llm.generate(long_prefix + prompts[1], sampling_params)  # warm`}
           'It accelerates prefill only, and only for whole blocks — a prefix that is not a multiple of block_size always leaves a remainder to recompute.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }

@@ -1,4 +1,5 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import guidedDecoding, { allowedAt, isAccepting, VOCAB, WORDS } from '../sim/guidedDecoding'
 import {
   BlogFigure,
@@ -6,6 +7,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
@@ -29,13 +31,17 @@ function FsmDiagram({ state }) {
           return (
             <span
               key={i}
-              className="flex h-6 w-6 items-center justify-center rounded-[3px] font-mono text-[0.65rem] transition-all duration-200"
+              className="flex h-6 w-6 items-center justify-center font-mono text-[0.65rem] transition-all duration-200"
               style={{
-                background: committed ? C.decode : current ? 'rgba(125,211,252,0.18)' : 'transparent',
+                background: committed
+                  ? C.decode
+                  : current
+                    ? 'rgba(125,211,252,0.18)'
+                    : 'transparent',
                 boxShadow: current
                   ? `inset 0 0 0 1.5px var(--color-accent)`
                   : `inset 0 0 0 1px var(--color-edge)`,
-                color: committed ? '#08090d' : current ? C.ink : C.faint,
+                color: committed ? C.bg : current ? C.ink : C.faint,
                 opacity: onBranch ? 1 : 0.3,
               }}
             >
@@ -70,13 +76,17 @@ function GuidedViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile
           label="output so far"
           value={state.emitted || '—'}
           tone={state.violations ? 'bad' : 'good'}
         />
-        <StatTile label="legal next tokens" value={`${allowed.length}/${VOCAB.length}`} tone="accent" />
+        <StatTile
+          label="legal next tokens"
+          value={`${allowed.length}/${VOCAB.length}`}
+          tone="accent"
+        />
         <StatTile
           label="grammar violations"
           value={state.violations}
@@ -87,10 +97,10 @@ function GuidedViz({ sim }) {
           value={done ? 'valid' : state.violations ? 'invalid' : 'in progress'}
           tone={done ? 'good' : state.violations ? 'bad' : 'neutral'}
         />
-      </div>
+      </StatRow>
 
-      <div className="rounded-lg border border-edge bg-panel-2/40 px-4 py-3">
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+      <div className="rounded-lg border border-edge bg-neutral-200 px-4 py-3">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           the FSM
         </div>
         <FsmDiagram state={state.fsm} />
@@ -99,10 +109,10 @@ function GuidedViz({ sim }) {
       {last && (
         <>
           <div>
-            <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+            <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
               _grammar_bitmask — {VOCAB.length} bits, one per vocab token
             </div>
-            <div className="scroll-x rounded-md border border-edge bg-[#08090d] p-3">
+            <div className="scroll-x border border-edge bg-neutral-100 p-3">
               <div className="min-w-max space-y-1.5">
                 <div className="flex items-center gap-2">
                   <span className="w-20 shrink-0 text-right font-mono text-[0.6rem] text-ink-faint">
@@ -128,10 +138,10 @@ function GuidedViz({ sim }) {
                     {last.mask.bits.map((b, i) => (
                       <span
                         key={i}
-                        className="flex h-6 w-6 items-center justify-center rounded-[3px] font-mono text-[0.62rem]"
+                        className="flex h-6 w-6 items-center justify-center font-mono text-[0.62rem]"
                         style={{
                           background: b ? C.cached : C.free,
-                          color: b ? '#08090d' : C.faint,
+                          color: b ? C.bg : C.faint,
                         }}
                       >
                         {b}
@@ -143,7 +153,7 @@ function GuidedViz({ sim }) {
                   <span className="w-20 shrink-0 text-right font-mono text-[0.6rem] text-ink-faint">
                     as an int
                   </span>
-                  <span className="font-mono text-[0.68rem] text-accent">
+                  <span className="font-mono text-[0.68rem] text-accent-700">
                     0b{last.mask.binary} = {last.mask.value}
                   </span>
                 </div>
@@ -152,7 +162,7 @@ function GuidedViz({ sim }) {
           </div>
 
           <div>
-            <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+            <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
               logits {params.guided === 'on' ? '— masked positions set to −∞' : '— unmasked'}
             </div>
             <DistChart
@@ -169,7 +179,7 @@ function GuidedViz({ sim }) {
               })}
             />
             <div className="mt-2 font-mono text-[0.68rem] text-ink-dim">
-              picked <span className="text-accent">"{last.char}"</span>
+              picked <span className="text-accent-700">"{last.char}"</span>
               {last.legal ? (
                 <span style={{ color: C.good }}> · legal, FSM advances (accept_tokens)</span>
               ) : (
@@ -190,51 +200,47 @@ export default function GuidedDecoding() {
   const sim = useSimulation(guidedDecoding)
 
   return (
-    <>
+    <StageLayout
+      slug="guided-decoding"
+      sim={sim}
+      simTitle="FSM + bitmask stepper"
+      simSubtitle='choice=["Positive", "Negative"] at character level, with a 16-token vocab. The junk tokens x, #, and 7 are deliberately given high logits so you can watch masking earn its keep.'
+      legend={[
+        { label: 'allowed by the FSM', color: C.cached },
+        { label: 'masked to −∞', color: C.bad },
+        { label: 'sampled', color: C.good },
+      ]}
+      simFooter={
+        <>
+          Turn guided decoding <Code>off</Code> and step: the model happily samples <Code>x</Code>{' '}
+          or <Code>#</Code>, the FSM cannot advance, and the output is garbage no post-hoc validator
+          can rescue. Turn it back <Code>on</Code> and the same logits produce a guaranteed-valid
+          word. The model never changed — only what it was allowed to say.
+        </>
+      }
+      panel={<GuidedViz sim={sim} />}
+    >
       <p>
-        Sometimes you need output that <em>parses</em> — JSON matching a schema, a SQL statement, one
-        of exactly two labels. Prompting for it and hoping is a probabilistic bet. Guided decoding
-        turns it into a guarantee, by constraining the logits at every step so that an invalid token
-        cannot be sampled at all.
+        Sometimes you need output that <em>parses</em> — JSON matching a schema, a SQL statement,
+        one of exactly two labels. Prompting for it and hoping is a probabilistic bet. Guided
+        decoding turns it into a guarantee, by constraining the logits at every step so that an
+        invalid token cannot be sampled at all.
       </p>
 
-      <h3>Grammar becomes a state machine</h3>
+      <h2>Grammar becomes a state machine</h2>
       <p>
         A grammar compiles into a finite state machine. At each decode step the FSM's current state
         determines which tokens are legal; every other logit is set to −∞ before sampling, so its
         probability after softmax is exactly zero. After a token is sampled, the FSM advances.
       </p>
       <p>
-        This handles far more than enums: regular grammars (Chomsky type-3, so any regex) all the way
-        up to context-free grammars (type-2, which covers most programming languages).
+        This handles far more than enums: regular grammars (Chomsky type-3, so any regex) all the
+        way up to context-free grammars (type-2, which covers most programming languages).
       </p>
-
-      <SimFrame
-        sim={sim}
-        keys
-        title="FSM + bitmask stepper"
-        subtitle='choice=["Positive", "Negative"] at character level, with a 16-token vocab. The junk tokens x, #, and 7 are deliberately given high logits so you can watch masking earn its keep.'
-        legend={[
-          { label: 'allowed by the FSM', color: C.cached },
-          { label: 'masked to −∞', color: C.bad },
-          { label: 'sampled', color: C.good },
-        ]}
-        footer={
-          <>
-            Turn guided decoding <Code>off</Code> and step: the model happily samples{' '}
-            <Code>x</Code> or <Code>#</Code>, the FSM cannot advance, and the output is garbage
-            no post-hoc validator can rescue. Turn it back <Code>on</Code> and the same logits
-            produce a guaranteed-valid word. The model never changed — only what it was allowed to
-            say.
-          </>
-        }
-      >
-        <GuidedViz sim={sim} />
-      </SimFrame>
 
       <BlogFigure src="fsm.png" caption="The toy example's FSM" max={560} />
 
-      <h3>How vLLM wires it up</h3>
+      <h2>How vLLM wires it up</h2>
       <ol>
         <li>
           At engine construction a <Code>StructuredOutputManager</Code> is created with access to
@@ -246,8 +252,8 @@ export default function GuidedDecoding() {
         </li>
         <li>The grammar is compiled asynchronously.</li>
         <li>
-          During scheduling, if compilation has finished the status flips to <Code>WAITING</Code> and
-          the id joins <Code>structured_output_request_ids</Code>; otherwise it goes to{' '}
+          During scheduling, if compilation has finished the status flips to <Code>WAITING</Code>{' '}
+          and the id joins <Code>structured_output_request_ids</Code>; otherwise it goes to{' '}
           <Code>skipped_waiting_requests</Code> and is retried next step.
         </li>
         <li>
@@ -266,10 +272,10 @@ export default function GuidedDecoding() {
       <Callout kind="key" title="Why a bitmask and not a boolean array">
         <p>
           One bit per token, packed 32 tokens to an <Code>int32</Code>. For a 128k vocab that's 4k
-          integers instead of 128k booleans — and it has to be rebuilt <em>every step for every
-          guided request</em>, so the 32× saving in size and bandwidth is the difference between
-          guided decoding being cheap and being the bottleneck. It's expanded back out to vocab
-          width on the GPU right before masking.
+          integers instead of 128k booleans — and it has to be rebuilt{' '}
+          <em>every step for every guided request</em>, so the 32× saving in size and bandwidth is
+          the difference between guided decoding being cheap and being the bottleneck. It's expanded
+          back out to vocab width on the GPU right before masking.
         </p>
         <p>
           With <Code>vocab_size = 32</Code> the whole mask is a single integer: <Code>101…001</Code>{' '}
@@ -310,9 +316,8 @@ outputs = llm.generate(prompts, sampling_params)`}
           to notice.
         </p>
         <p>
-          Most of the real complexity lives in third-party libraries like{' '}
-          <Code>xgrammar</Code>, which is responsible for producing the bit patterns from the
-          current FSM state.
+          Most of the real complexity lives in third-party libraries like <Code>xgrammar</Code>,
+          which is responsible for producing the bit patterns from the current FSM state.
         </p>
       </Callout>
 
@@ -324,6 +329,6 @@ outputs = llm.generate(prompts, sampling_params)`}
           'The guarantee is syntactic only. Schema-valid output can still be factually wrong — and it is now harder to spot.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }

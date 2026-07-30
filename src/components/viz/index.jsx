@@ -2,9 +2,16 @@
  * Reusable visualization primitives.
  * Every stage composes these rather than inventing its own markup, so the
  * meaning of a colour or a shape stays constant across the whole site.
+ *
+ * Modernist rules apply here as much as to the chrome: square corners, 1px
+ * divider rules instead of rings and shadows, and structure shown by the grid
+ * rather than by boxes floating on a wash.
  */
 
 export const C = {
+  bg: 'var(--color-surface)',
+  panel: 'var(--color-panel)',
+  panel2: 'var(--color-panel-2)',
   accent: 'var(--color-accent)',
   free: 'var(--color-free)',
   alloc: 'var(--color-alloc)',
@@ -15,17 +22,74 @@ export const C = {
   good: 'var(--color-good)',
   warn: 'var(--color-warn)',
   bad: 'var(--color-bad)',
+  divider: 'var(--color-divider)',
   edge: 'var(--color-edge)',
   ink: 'var(--color-ink)',
   dim: 'var(--color-ink-dim)',
   faint: 'var(--color-ink-faint)',
+
+  n200: 'var(--color-neutral-200)',
+  n300: 'var(--color-neutral-300)',
+  n400: 'var(--color-neutral-400)',
+  n500: 'var(--color-neutral-500)',
+  n700: 'var(--color-neutral-700)',
+  n900: 'var(--color-neutral-900)',
+  a100: 'var(--color-accent-100)',
+  a200: 'var(--color-accent-200)',
+  a300: 'var(--color-accent-300)',
+  a400: 'var(--color-accent-400)',
+  a700: 'var(--color-accent-700)',
 }
 
-/** Stable per-request colour, so request #2 looks the same in every sim. */
+/**
+ * The text colour that belongs on a given fill.
+ *
+ * On a light ground some role fills are dark (wanting light text) and some are
+ * light (wanting ink), and the call site can't tell which — the values are CSS
+ * variables. Each role therefore declares its own `-ink` companion in
+ * index.css, and reqColor's hsl() output is read directly for lightness.
+ */
+const FILL_INK = {
+  [C.prefill]: 'var(--color-prefill-ink)',
+  [C.decode]: 'var(--color-decode-ink)',
+  [C.free]: 'var(--color-free-ink)',
+  [C.alloc]: 'var(--color-alloc-ink)',
+  [C.cached]: 'var(--color-cached-ink)',
+  [C.partial]: 'var(--color-partial-ink)',
+  [C.good]: 'var(--color-good-ink)',
+  [C.warn]: 'var(--color-warn-ink)',
+  [C.bad]: 'var(--color-bad-ink)',
+  [C.accent]: 'var(--color-surface)',
+  [C.n900]: 'var(--color-surface)',
+  [C.n700]: 'var(--color-surface)',
+  [C.ink]: 'var(--color-surface)',
+}
+
+export function inkOn(fill, fallback = C.ink) {
+  if (FILL_INK[fill]) return FILL_INK[fill]
+  const m = /hsl\(\s*[\d.]+\s+[\d.]+%\s+([\d.]+)%/.exec(fill ?? '')
+  if (m) return Number(m[1]) > 58 ? C.ink : C.bg
+  return fallback
+}
+
+/**
+ * Stable per-request colour, so request #2 looks the same in every sim.
+ *
+ * Modernist is a mono system, but identity is the one job a single accent can't
+ * do: a block grid with five owners needs five separable fills at once. The hue
+ * order is unchanged from the dark theme (request identity must not shuffle
+ * between stages); saturation and lightness are pulled down so the set reads as
+ * one muted, printed-ink family on the light ground.
+ */
 const REQ_HUES = [200, 28, 150, 280, 340, 95, 250, 15, 175, 315]
 export function reqColor(i, { light = false } = {}) {
   const h = REQ_HUES[i % REQ_HUES.length]
-  return light ? `hsl(${h} 70% 72%)` : `hsl(${h} 62% 58%)`
+  return light ? `hsl(${h} 34% 74%)` : `hsl(${h} 38% 42%)`
+}
+
+/** The text colour that belongs on top of reqColor(i). */
+export function reqInk(i, opts) {
+  return inkOn(reqColor(i, opts))
 }
 
 /* ------------------------------------------------------------------ BlockGrid */
@@ -33,47 +97,48 @@ export function reqColor(i, { light = false } = {}) {
 /**
  * A grid of physical KV-cache blocks.
  * blocks: [{ state: 'free'|'alloc'|'cached'|'partial', owner?, label?, refs?, glyph? }]
+ *
+ * Drawn as a seamless ruled grid — rules on the container's top/left and each
+ * cell's right/bottom — so the blocks read as one table rather than as a set of
+ * floating tiles.
  */
 export function BlockGrid({ blocks, cols = 16, size = 26, showIndex = false, onHover }) {
   return (
-    <div
-      className="grid gap-1"
-      style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, ${size}px))` }}
-    >
-      {blocks.map((b, i) => {
-        const bg =
-          b.state === 'free'
-            ? C.free
-            : b.state === 'cached'
-              ? C.cached
-              : b.state === 'partial'
-                ? C.partial
-                : (b.color ?? C.alloc)
-        const dark = b.state === 'cached' || b.state === 'partial'
-        return (
-          <div
-            key={i}
-            onMouseEnter={onHover ? () => onHover(i) : undefined}
-            title={b.title ?? `block ${i} — ${b.state}`}
-            className="relative flex items-center justify-center rounded-[4px] font-mono text-[0.58rem] ring-1 ring-inset ring-black/25 transition-colors duration-200"
-            style={{
-              height: size,
-              background: bg,
-              color: b.state === 'free' ? C.faint : dark ? '#08090d' : '#0b0d12',
-            }}
-          >
-            {b.glyph ?? (showIndex ? i : '')}
-            {b.refs > 1 && (
-              <span
-                className="absolute -top-1 -right-1 flex h-3 w-3 items-center justify-center rounded-full bg-[color:var(--color-warn)] text-[0.5rem] font-bold text-black"
-                title={`refcount ${b.refs}`}
-              >
-                {b.refs}
-              </span>
-            )}
-          </div>
-        )
-      })}
+    <div className="scroll-x">
+      <div
+        className="grid w-max border-t border-l border-edge"
+        style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, ${size}px))` }}
+      >
+        {blocks.map((b, i) => {
+          const bg =
+            b.state === 'free'
+              ? C.free
+              : b.state === 'cached'
+                ? C.cached
+                : b.state === 'partial'
+                  ? C.partial
+                  : (b.color ?? C.alloc)
+          return (
+            <div
+              key={i}
+              onMouseEnter={onHover ? () => onHover(i) : undefined}
+              title={b.title ?? `block ${i} — ${b.state}`}
+              className="relative flex items-center justify-center border-r border-b border-edge font-mono text-[0.58rem] transition-colors duration-200"
+              style={{ height: size, background: bg, color: inkOn(bg) }}
+            >
+              {b.glyph ?? (showIndex ? i : '')}
+              {b.refs > 1 && (
+                <span
+                  className="absolute top-0 right-0 flex h-3 w-3 items-center justify-center bg-accent text-[0.5rem] font-bold text-surface"
+                  title={`refcount ${b.refs}`}
+                >
+                  {b.refs}
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -85,16 +150,17 @@ export function QueueLane({ label, items, empty = 'empty', accent, right }) {
   return (
     <div className="flex items-start gap-3">
       <div className="w-20 shrink-0 pt-1 text-right">
-        <div className="font-mono text-[0.62rem] tracking-wider uppercase" style={{ color: accent ?? C.faint }}>
+        <div
+          className="font-mono text-[0.62rem] tracking-wider uppercase"
+          style={{ color: accent ?? C.faint }}
+        >
           {label}
         </div>
-        <div className="font-mono text-[0.6rem] text-ink-faint/70 tabular-nums">
-          {items.length}
-        </div>
+        <div className="font-mono text-[0.6rem] text-ink-faint tabular-nums">{items.length}</div>
       </div>
-      <div className="scroll-x flex min-h-8 flex-1 flex-wrap items-center gap-1.5 rounded-md border border-dashed border-edge px-2 py-1.5">
+      <div className="scroll-x flex min-h-8 flex-1 flex-wrap items-center gap-1.5 border border-dashed border-edge px-2 py-1.5">
         {items.length === 0 ? (
-          <span className="font-mono text-[0.65rem] text-ink-faint/60">{empty}</span>
+          <span className="font-mono text-[0.65rem] text-ink-faint">{empty}</span>
         ) : (
           items.map((it) => <Chip key={it.key ?? it.id} {...it} />)
         )}
@@ -108,13 +174,11 @@ export function Chip({ id, sub, color, tone, dim, glyph }) {
   const bg = color ?? (tone === 'prefill' ? C.prefill : C.decode)
   return (
     <span
-      className="inline-flex items-center gap-1 rounded px-1.5 py-1 font-mono text-[0.65rem] ring-1 ring-inset ring-black/30 transition-all duration-200"
+      className="inline-flex items-center gap-1 px-1.5 py-1 font-mono text-[0.65rem] transition-all duration-200"
       style={{
         background: dim ? 'transparent' : bg,
-        color: dim ? bg : '#08090d',
-        borderColor: bg,
-        opacity: dim ? 0.65 : 1,
-        boxShadow: dim ? `inset 0 0 0 1px ${bg}` : 'none',
+        color: dim ? bg : inkOn(bg),
+        boxShadow: `inset 0 0 0 1px ${bg}`,
       }}
       title={sub}
     >
@@ -139,9 +203,9 @@ export function MeterBar({ label, value, max, color = C.decode, sublabel, height
           {sublabel ?? `${value} / ${max}`}
         </span>
       </div>
-      <div className="overflow-hidden rounded-full bg-edge" style={{ height }}>
+      <div className="overflow-hidden bg-neutral-300" style={{ height }}>
         <div
-          className="h-full rounded-full transition-all duration-300"
+          className="h-full transition-all duration-300"
           style={{ width: `${pct}%`, background: color }}
         />
       </div>
@@ -162,7 +226,7 @@ export function StackedBar({ label, segments, max, height = 10, sublabel }) {
           {sublabel ?? `${total} / ${max}`}
         </span>
       </div>
-      <div className="flex overflow-hidden rounded-full bg-edge" style={{ height }}>
+      <div className="flex overflow-hidden bg-neutral-300" style={{ height }}>
         {segments.map((s, i) => (
           <div
             key={i}
@@ -185,20 +249,19 @@ export function StackedBar({ label, segments, max, height = 10, sublabel }) {
  */
 export function TokenStrip({ tokens, size = 24, gap = 2, wrap = true, mono = true }) {
   return (
-    <div
-      className={`flex ${wrap ? 'flex-wrap' : 'scroll-x'} items-end`}
-      style={{ gap }}
-    >
+    <div className={`flex ${wrap ? 'flex-wrap' : 'scroll-x'} items-end`} style={{ gap }}>
       {tokens.map((t, i) => (
         <div key={i} className="flex flex-col items-center" style={{ minWidth: size }}>
           <div
-            className={`flex items-center justify-center rounded-[3px] px-1 ring-1 ring-inset ring-black/25 transition-colors duration-200 ${mono ? 'font-mono' : ''}`}
+            className={`flex items-center justify-center px-1 transition-colors duration-200 ${
+              mono ? 'font-mono' : ''
+            }`}
             style={{
               height: size,
               minWidth: size,
               background: t.dim ? 'transparent' : (t.color ?? C.free),
-              boxShadow: t.dim ? `inset 0 0 0 1px ${t.color ?? C.edge}` : undefined,
-              color: t.dim ? (t.color ?? C.faint) : '#08090d',
+              boxShadow: `inset 0 0 0 1px ${t.dim ? (t.color ?? C.edge) : C.divider}`,
+              color: t.dim ? (t.color ?? C.faint) : inkOn(t.color ?? C.free),
               fontSize: size > 20 ? '0.62rem' : '0.55rem',
             }}
             title={t.title}
@@ -229,12 +292,12 @@ export function TokenStrip({ tokens, size = 24, gap = 2, wrap = true, mono = tru
  */
 const CELL_COLOR = {
   idle: 'transparent',
-  wait: 'var(--color-edge)',
+  wait: C.n300,
   prefill: C.prefill,
   decode: C.decode,
   preempt: C.bad,
   hit: C.cached,
-  done: 'var(--color-good)',
+  done: C.n500,
 }
 
 export function Timeline({ rows, cell = 14, gap = 2, cursor, labelWidth = 76, axis }) {
@@ -267,14 +330,13 @@ export function Timeline({ rows, cell = 14, gap = 2, cursor, labelWidth = 76, ax
                 <div
                   key={i}
                   title={c.title}
-                  className="rounded-[2px] transition-colors duration-200"
+                  className="transition-colors duration-200"
                   style={{
                     width: cell,
                     height: cell,
                     background: c.color ?? CELL_COLOR[c.kind] ?? 'transparent',
-                    boxShadow:
-                      c.kind === 'idle' ? `inset 0 0 0 1px var(--color-edge)` : undefined,
-                    outline: cursor === i ? `1px solid var(--color-accent)` : undefined,
+                    boxShadow: c.kind === 'idle' ? `inset 0 0 0 1px ${C.divider}` : undefined,
+                    outline: cursor === i ? `1px solid ${C.accent}` : undefined,
                     outlineOffset: 1,
                   }}
                 />
@@ -294,7 +356,7 @@ export function DistChart({ bars, height = 120, showValues = false }) {
   const max = Math.max(...bars.map((b) => b.value), 1e-9)
   return (
     <div className="scroll-x">
-      <div className="flex items-end gap-1.5" style={{ height }}>
+      <div className="flex items-end gap-1.5 border-b border-edge" style={{ height }}>
         {bars.map((b, i) => {
           const h = Math.max(1, (b.value / max) * (height - 22))
           return (
@@ -305,11 +367,11 @@ export function DistChart({ bars, height = 120, showValues = false }) {
                 </span>
               )}
               <div
-                className="w-full rounded-t-[3px] transition-all duration-300"
+                className="w-full transition-all duration-300"
                 style={{
                   height: h,
                   background: b.color ?? C.decode,
-                  opacity: b.muted ? 0.22 : 1,
+                  opacity: b.muted ? 0.28 : 1,
                 }}
                 title={`${b.label}: ${b.value.toFixed(4)}`}
               />
@@ -341,30 +403,49 @@ export function LineChart({
   markers = [],
   pad = { l: 44, r: 12, t: 12, b: 30 },
 }) {
-  const xs = series.flatMap((s) => s.points.map((p) => p[0]))
-  const ys = series.flatMap((s) => s.points.map((p) => p[1]))
-  const x0 = Math.min(...xs)
-  const x1 = Math.max(...xs)
+  const xs = series.flatMap((s) => s.points.map((p) => p[0])).filter(Number.isFinite)
+  const ys = series.flatMap((s) => s.points.map((p) => p[1])).filter(Number.isFinite)
+  // An empty or all-NaN series would otherwise put Infinity through px()/py()
+  // and emit NaN into every x/cx attribute in the chart.
+  const x0 = xs.length ? Math.min(...xs) : 0
+  const x1 = xs.length ? Math.max(...xs) : 1
   const y0 = 0
-  const y1 = Math.max(...ys) * 1.08 || 1
-  const px = (x) => pad.l + ((x - x0) / (x1 - x0 || 1)) * (width - pad.l - pad.r)
-  const py = (y) => height - pad.b - ((y - y0) / (y1 - y0 || 1)) * (height - pad.t - pad.b)
+  const y1 = (ys.length ? Math.max(...ys) : 0) * 1.08 || 1
+  const px = (x) =>
+    pad.l + ((Number.isFinite(x) ? x - x0 : 0) / (x1 - x0 || 1)) * (width - pad.l - pad.r)
+  const py = (y) =>
+    height - pad.b - ((Number.isFinite(y) ? y - y0 : 0) / (y1 - y0 || 1)) * (height - pad.t - pad.b)
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: height * 1.4 }}>
       {/* frame */}
-      <line x1={pad.l} y1={pad.t} x2={pad.l} y2={height - pad.b} stroke={C.edge} />
+      <line x1={pad.l} y1={pad.t} x2={pad.l} y2={height - pad.b} stroke={C.ink} strokeWidth="1.5" />
       <line
         x1={pad.l}
         y1={height - pad.b}
         x2={width - pad.r}
         y2={height - pad.b}
-        stroke={C.edge}
+        stroke={C.ink}
+        strokeWidth="1.5"
       />
       {yTicks.map((t) => (
         <g key={`y${t}`}>
-          <line x1={pad.l} y1={py(t)} x2={width - pad.r} y2={py(t)} stroke={C.edge} strokeDasharray="2 4" />
-          <text x={pad.l - 6} y={py(t) + 3} textAnchor="end" fontSize="8" fill={C.faint} fontFamily="ui-monospace">
+          <line
+            x1={pad.l}
+            y1={py(t)}
+            x2={width - pad.r}
+            y2={py(t)}
+            stroke={C.n300}
+            strokeDasharray="2 4"
+          />
+          <text
+            x={pad.l - 6}
+            y={py(t) + 3}
+            textAnchor="end"
+            fontSize="8"
+            fill={C.faint}
+            fontFamily="ui-monospace"
+          >
             {t}
           </text>
         </g>
@@ -384,8 +465,21 @@ export function LineChart({
       ))}
       {markers.map((m, i) => (
         <g key={i}>
-          <line x1={px(m.x)} y1={pad.t} x2={px(m.x)} y2={height - pad.b} stroke={m.color ?? C.warn} strokeDasharray="4 3" />
-          <text x={px(m.x) + 4} y={pad.t + 9} fontSize="8" fill={m.color ?? C.warn} fontFamily="ui-monospace">
+          <line
+            x1={px(m.x)}
+            y1={pad.t}
+            x2={px(m.x)}
+            y2={height - pad.b}
+            stroke={m.color ?? C.warn}
+            strokeDasharray="4 3"
+          />
+          <text
+            x={px(m.x) + 4}
+            y={pad.t + 9}
+            fontSize="8"
+            fill={m.color ?? C.warn}
+            fontFamily="ui-monospace"
+          >
             {m.label}
           </text>
         </g>
@@ -400,17 +494,38 @@ export function LineChart({
             strokeDasharray={s.dashed ? '5 4' : undefined}
           />
           {s.dot != null && (
-            <circle cx={px(s.dot[0])} cy={py(s.dot[1])} r="4" fill={s.color ?? C.decode} />
+            <rect
+              x={px(s.dot[0]) - 3.5}
+              y={py(s.dot[1]) - 3.5}
+              width="7"
+              height="7"
+              fill={s.color ?? C.decode}
+            />
           )}
         </g>
       ))}
       {xLabel && (
-        <text x={(width + pad.l) / 2} y={height - 4} textAnchor="middle" fontSize="8.5" fill={C.faint} fontFamily="ui-monospace">
+        <text
+          x={(width + pad.l) / 2}
+          y={height - 4}
+          textAnchor="middle"
+          fontSize="8.5"
+          fill={C.faint}
+          fontFamily="ui-monospace"
+        >
           {xLabel}
         </text>
       )}
       {yLabel && (
-        <text x={11} y={height / 2} textAnchor="middle" fontSize="8.5" fill={C.faint} fontFamily="ui-monospace" transform={`rotate(-90 11 ${height / 2})`}>
+        <text
+          x={11}
+          y={height / 2}
+          textAnchor="middle"
+          fontSize="8.5"
+          fill={C.faint}
+          fontFamily="ui-monospace"
+          transform={`rotate(-90 11 ${height / 2})`}
+        >
           {yLabel}
         </text>
       )}
@@ -464,11 +579,27 @@ export function NodeGraph({
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="w-full">
       <defs>
-        <marker id="ng-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z" fill={C.faint} />
+        <marker
+          id="ng-arrow"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="6"
+          markerHeight="6"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={C.n500} />
         </marker>
-        <marker id="ng-arrow-hot" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--color-accent)" />
+        <marker
+          id="ng-arrow-hot"
+          viewBox="0 0 10 10"
+          refX="9"
+          refY="5"
+          markerWidth="6"
+          markerHeight="6"
+          orient="auto-start-reverse"
+        >
+          <path d="M 0 0 L 10 5 L 0 10 z" fill={C.accent} />
         </marker>
       </defs>
 
@@ -479,12 +610,18 @@ export function NodeGraph({
             y={g.y}
             width={g.w}
             height={g.h}
-            rx="10"
-            fill="rgba(255,255,255,0.018)"
-            stroke={C.edge}
+            fill="none"
+            stroke={C.divider}
             strokeDasharray="4 4"
           />
-          <text x={g.x + 8} y={g.y + 14} fontSize="8.5" fill={C.faint} fontFamily="ui-monospace" letterSpacing="1">
+          <text
+            x={g.x + 8}
+            y={g.y + 14}
+            fontSize="8.5"
+            fill={C.faint}
+            fontFamily="ui-monospace"
+            letterSpacing="1"
+          >
             {g.label.toUpperCase()}
           </text>
         </g>
@@ -497,7 +634,7 @@ export function NodeGraph({
             <path
               d={path(e)}
               fill="none"
-              stroke={hot ? 'var(--color-accent)' : C.edge}
+              stroke={hot ? C.accent : C.n400}
               strokeWidth={hot ? 2 : 1.2}
               strokeDasharray={e.dashed ? '4 3' : undefined}
               markerEnd={`url(#${hot ? 'ng-arrow-hot' : 'ng-arrow'})`}
@@ -519,10 +656,9 @@ export function NodeGraph({
               y={n.y}
               width={n.w ?? 120}
               height={n.h ?? 40}
-              rx="7"
-              fill={on ? 'rgba(125,211,252,0.14)' : 'var(--color-panel-2)'}
-              stroke={on ? 'var(--color-accent)' : n.stroke ?? C.edge}
-              strokeWidth={on ? 1.8 : 1}
+              fill={on ? C.accent : C.panel}
+              stroke={on ? C.accent : (n.stroke ?? C.divider)}
+              strokeWidth={on ? 2 : 1}
             />
             <text
               x={n.x + (n.w ?? 120) / 2}
@@ -530,7 +666,7 @@ export function NodeGraph({
               textAnchor="middle"
               fontSize="9.5"
               fontFamily="ui-monospace"
-              fill={on ? 'var(--color-accent)' : C.ink}
+              fill={on ? C.bg : C.ink}
             >
               {n.label}
             </text>
@@ -541,7 +677,7 @@ export function NodeGraph({
                 textAnchor="middle"
                 fontSize="7.5"
                 fontFamily="ui-monospace"
-                fill={C.faint}
+                fill={on ? C.a200 : C.faint}
               >
                 {n.sub}
               </text>

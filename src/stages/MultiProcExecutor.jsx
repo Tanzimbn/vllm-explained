@@ -1,4 +1,5 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import parallelism, { LAYER_COMPUTE, tpCost } from '../sim/parallelism'
 import {
   BlogFigure,
@@ -7,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
@@ -28,7 +30,7 @@ function TpViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile
           label="compute per worker"
           value={cost.compute.toFixed(1)}
@@ -47,11 +49,11 @@ function TpViz({ sim }) {
           tone={cost.efficiency > 0.7 ? 'good' : cost.efficiency > 0.4 ? 'warn' : 'bad'}
           hint="Speedup ÷ number of GPUs. 100% would be perfect scaling."
         />
-      </div>
+      </StatRow>
 
       {/* the parent + queues + workers */}
       <div className="space-y-3">
-        <div className="rounded-lg border border-edge bg-panel-2/40 px-3 py-2">
+        <div className="rounded-lg border border-edge bg-neutral-200 px-3 py-2">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-[0.68rem] text-ink">MultiProcExecutor (parent)</span>
             <span className="font-mono text-[0.6rem] text-ink-faint">{state.phase}</span>
@@ -70,7 +72,10 @@ function TpViz({ sim }) {
               background: state.phase === 'broadcast' ? 'rgba(224,179,65,0.14)' : 'transparent',
             }}
           >
-            <span className="ml-2 font-mono text-[0.6rem] leading-6" style={{ color: state.phase === 'broadcast' ? C.warn : C.faint }}>
+            <span
+              className="ml-2 font-mono text-[0.6rem] leading-6"
+              style={{ color: state.phase === 'broadcast' ? C.warn : C.faint }}
+            >
               {state.phase === 'broadcast' ? 'work item → all ranks' : 'empty (shared memory)'}
             </span>
           </div>
@@ -96,7 +101,10 @@ function TpViz({ sim }) {
               <div className="flex items-baseline justify-between">
                 <span className="font-mono text-[0.62rem] text-ink">rank {rank}</span>
                 {rank === 0 && (
-                  <span className="font-mono text-[0.52rem]" style={{ color: C.accent ?? C.decode }}>
+                  <span
+                    className="font-mono text-[0.52rem]"
+                    style={{ color: C.accent ?? C.decode }}
+                  >
                     driver
                   </span>
                 )}
@@ -128,7 +136,9 @@ function TpViz({ sim }) {
           >
             <span
               className="ml-2 font-mono text-[0.6rem] leading-6"
-              style={{ color: state.phase === 'collect' || state.phase === 'done' ? C.cached : C.faint }}
+              style={{
+                color: state.phase === 'collect' || state.phase === 'done' ? C.cached : C.faint,
+              }}
             >
               {state.phase === 'collect' || state.phase === 'done'
                 ? 'result ← output rank'
@@ -140,7 +150,7 @@ function TpViz({ sim }) {
 
       {/* layer progress */}
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           layers · compute then all-reduce, per layer
         </div>
         <div className="flex flex-wrap gap-1">
@@ -149,8 +159,11 @@ function TpViz({ sim }) {
               <span
                 className="flex h-6 w-8 items-center justify-center rounded-l-[3px] font-mono text-[0.55rem]"
                 style={{
-                  background: l < state.layer || (l === state.layer && state.phase !== 'broadcast') ? C.decode : C.free,
-                  color: l <= state.layer ? '#08090d' : C.faint,
+                  background:
+                    l < state.layer || (l === state.layer && state.phase !== 'broadcast')
+                      ? C.decode
+                      : C.free,
+                  color: l <= state.layer ? C.bg : C.faint,
                 }}
                 title={`layer ${l} shard compute`}
               >
@@ -164,7 +177,7 @@ function TpViz({ sim }) {
                       l < state.layer || (l === state.layer && state.phase === 'allreduce')
                         ? C.prefill
                         : C.free,
-                    color: l < state.layer ? '#08090d' : C.faint,
+                    color: l < state.layer ? C.bg : C.faint,
                   }}
                   title="all-reduce"
                 >
@@ -176,8 +189,8 @@ function TpViz({ sim }) {
         </div>
       </div>
 
-      <p className="rounded-md bg-panel-2/50 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
-        <span className="text-accent">tick {state.tick}:</span> {state.note}
+      <p className="rounded-md bg-neutral-200 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
+        <span className="text-accent-700">tick {state.tick}:</span> {state.note}
       </p>
     </div>
   )
@@ -185,8 +198,7 @@ function TpViz({ sim }) {
 
 function ScalingChart({ params }) {
   const sizes = [1, 2, 4, 8, 16, 32]
-  const curve = (commCost) =>
-    sizes.map((tp) => [tp, tpCost(tp, { ...params, commCost }).speedup])
+  const curve = (commCost) => sizes.map((tp) => [tp, tpCost(tp, { ...params, commCost }).speedup])
   return (
     <LineChart
       height={200}
@@ -215,20 +227,40 @@ export default function MultiProcExecutor() {
   const sim = useSimulation(parallelism)
 
   return (
-    <>
+    <StageLayout
+      slug="multiproc-executor"
+      sim={sim}
+      simTitle="One forward pass at TP=8"
+      simSubtitle="Step through the queue handshake and per-layer compute/all-reduce cycle. Then raise the all-reduce cost and watch parallel efficiency fall apart."
+      legend={[
+        { label: 'shard compute', color: C.decode },
+        { label: 'all-reduce', color: C.prefill },
+        { label: 'queue active', color: C.warn },
+        { label: 'result returned', color: C.cached },
+      ]}
+      simFooter={
+        <>
+          The number to watch is parallel efficiency. Compute per worker falls as <Code>1/TP</Code>,
+          while the all-reduce cost per layer <em>grows</em> with the group size — a wider
+          collective needs more hops. So past some point you're adding GPUs mainly to pay for more
+          communication. This is the entire reason TP isn't simply set as high as you have GPUs.
+        </>
+      }
+      panel={<TpViz sim={sim} />}
+    >
       <p>
         Everything so far assumed the model fits on one GPU. When it doesn't, you shard it — and the
         engine needs an orchestration layer to drive several worker processes as if they were one.
-        That layer is <Code>MultiProcExecutor</Code>, and the remarkable thing about it is how little
-        the rest of the engine notices.
+        That layer is <Code>MultiProcExecutor</Code>, and the remarkable thing about it is how
+        little the rest of the engine notices.
       </p>
 
-      <h3>Two ways to split a model</h3>
+      <h2>Two ways to split a model</h2>
       <p>
         <strong>Tensor parallelism (TP)</strong> shards individual weight matrices across GPUs, so
-        every GPU holds a slice of every layer and they cooperate on each one. That cooperation means
-        an all-reduce after each sharded block — a lot of communication, which is why TP is normally
-        kept <em>within</em> a node where interconnect bandwidth is high.
+        every GPU holds a slice of every layer and they cooperate on each one. That cooperation
+        means an all-reduce after each sharded block — a lot of communication, which is why TP is
+        normally kept <em>within</em> a node where interconnect bandwidth is high.
       </p>
       <p>
         <strong>Pipeline parallelism (PP)</strong> assigns whole layers to different GPUs, so
@@ -245,30 +277,6 @@ export default function MultiProcExecutor() {
         </p>
       </Callout>
 
-      <SimFrame
-        sim={sim}
-        keys
-        title="One forward pass at TP=8"
-        subtitle="Step through the queue handshake and per-layer compute/all-reduce cycle. Then raise the all-reduce cost and watch parallel efficiency fall apart."
-        legend={[
-          { label: 'shard compute', color: C.decode },
-          { label: 'all-reduce', color: C.prefill },
-          { label: 'queue active', color: C.warn },
-          { label: 'result returned', color: C.cached },
-        ]}
-        footer={
-          <>
-            The number to watch is parallel efficiency. Compute per worker falls as{' '}
-            <Code>1/TP</Code>, while the all-reduce cost per layer <em>grows</em> with the group
-            size — a wider collective needs more hops. So past some point you're adding GPUs mainly
-            to pay for more communication. This is the entire reason TP isn't simply set as high as
-            you have GPUs.
-          </>
-        }
-      >
-        <TpViz sim={sim} />
-      </SimFrame>
-
       <BlogFigure
         src="multiprocexecutor.png"
         caption="MultiProcExecutor at TP=8, with rank 0 as the driver worker"
@@ -284,7 +292,7 @@ export default function MultiProcExecutor() {
         </p>
       </Card>
 
-      <h3>How the processes are wired</h3>
+      <h2>How the processes are wired</h2>
       <ol>
         <li>
           <Code>MultiProcExecutor</Code> initializes an <Code>rpc_broadcast_mq</Code> message queue,
@@ -292,8 +300,8 @@ export default function MultiProcExecutor() {
         </li>
         <li>
           The constructor loops over <Code>world_size</Code> (TP=8 ⇒ 8) and spawns a daemon process
-          per rank via <Code>WorkerProc.make_worker_process</Code>, creating a reader and writer pipe
-          for each.
+          per rank via <Code>WorkerProc.make_worker_process</Code>, creating a reader and writer
+          pipe for each.
         </li>
         <li>
           Each new process runs <Code>WorkerProc.worker_main</Code>, instantiating a worker through
@@ -301,9 +309,9 @@ export default function MultiProcExecutor() {
           now with TP-partitioned weights.
         </li>
         <li>
-          Each worker works out whether it is the <strong>driver</strong> (rank 0 in the TP group) or
-          a regular worker, and sets up two queues: <Code>rpc_broadcast_mq</Code> (shared with the
-          parent, for receiving work) and its own <Code>worker_response_mq</Code> (for replies).
+          Each worker works out whether it is the <strong>driver</strong> (rank 0 in the TP group)
+          or a regular worker, and sets up two queues: <Code>rpc_broadcast_mq</Code> (shared with
+          the parent, for receiving work) and its own <Code>worker_response_mq</Code> (for replies).
         </li>
         <li>
           During init each child sends its <Code>worker_response_mq</Code> handle to the parent over
@@ -362,6 +370,6 @@ export default function MultiProcExecutor() {
           'EngineCore still just calls execute_model. Every stage before this one keeps working unchanged, which is why scaling up is a late, small chapter rather than a rewrite.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }

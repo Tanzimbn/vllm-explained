@@ -82,6 +82,49 @@ describe('routing and content wiring', () => {
   })
 })
 
+/**
+ * The two-pane stage layout, pinned.
+ *
+ * Every stage puts its primary simulator in a sticky right-hand pane and its
+ * prose on the left, and several pages say "the panel on the right" in so many
+ * words. Losing the sticky pane, or letting the simulator fall back into the
+ * prose flow, would make that copy wrong while still rendering fine — so it is
+ * asserted rather than trusted.
+ */
+describe('every stage is laid out as prose + a pinned simulator', () => {
+  for (const [slug, Comp] of Object.entries(PAGES)) {
+    it(`${slug} puts its simulator in the sticky pane`, () => {
+      const html = render(Comp)
+      const article = html.indexOf('<article')
+      const aside = html.indexOf('<aside')
+      expect(article, 'no prose pane').toBeGreaterThan(-1)
+      expect(aside, 'no simulator pane').toBeGreaterThan(-1)
+      // Prose first in the DOM; CSS `order` puts the pane first on narrow screens.
+      expect(article).toBeLessThan(aside)
+      expect(html).toContain('lg:sticky')
+      // The transport and the simulator chrome live inside the pane, not the prose.
+      const pane = html.slice(aside)
+      expect(pane, 'simulator chrome is not in the pane').toContain('simulator')
+      expect(pane, 'step controls are not in the pane').toContain('▶ Step')
+    })
+  }
+
+  it('reserves SimFrame for the stages that have a second simulator', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const stagesDir = dirname(fileURLToPath(import.meta.url))
+
+    const inline = []
+    for (const f of readdirSync(stagesDir)) {
+      if (!f.endsWith('.jsx') || f.endsWith('.test.jsx')) continue
+      if (readFileSync(join(stagesDir, f), 'utf8').includes('<SimFrame')) inline.push(f)
+    }
+    // Only these two stages ship a secondary simulator inline in the prose.
+    expect(inline.sort()).toEqual(['Benchmarking.jsx', 'ForwardPass.jsx'])
+  })
+})
+
 describe('blog figures resolve to downloaded files', () => {
   it('every referenced image exists in public/img', async () => {
     const { readdirSync, readFileSync } = await import('node:fs')

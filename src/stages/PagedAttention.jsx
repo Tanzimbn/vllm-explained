@@ -1,11 +1,12 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import kvcache, { memoryBreakdown } from '../sim/kvcache'
 import {
   BlogFigure,
   Callout,
   Code,
   CodeBlock,
-  SimFrame,
+  StatRow,
   StatTile,
   Takeaways,
 } from '../components/ui'
@@ -30,7 +31,7 @@ function KvViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile
           label="slot efficiency"
           value={m.efficiency.toFixed(0)}
@@ -46,15 +47,15 @@ function KvViz({ sim }) {
           unit=" blk"
           hint="Only matters to a contiguous allocator — a paged one never needs adjacency"
         />
-      </div>
+      </StatRow>
 
       {/* physical block pool */}
       <div>
-        <div className="mb-2 flex items-baseline justify-between">
-          <span className="font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 flex items-baseline justify-between gap-3">
+          <span className="font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
             physical KV blocks · {params.blockSize} tokens each
           </span>
-          <span className="font-mono text-[0.62rem] text-ink-faint tabular-nums">
+          <span className="font-mono text-[10px] text-neutral-600 tabular-nums">
             {m.freeBlocks} free / {state.blocks.length}
           </span>
         </div>
@@ -73,7 +74,7 @@ function KvViz({ sim }) {
 
       {/* per-request logical → physical block table */}
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           req_to_blocks — the block table
         </div>
         <div className="space-y-1">
@@ -92,7 +93,7 @@ function KvViz({ sim }) {
               >
                 {r.id}
               </span>
-              <span className="w-24 shrink-0 text-[0.62rem] text-ink-faint tabular-nums">
+              <span className="w-24 shrink-0 text-[0.62rem] text-neutral-600 tabular-nums">
                 {r.status === 'done'
                   ? `done · ${r.generated} tok`
                   : r.status === 'waiting'
@@ -103,9 +104,7 @@ function KvViz({ sim }) {
                 {r.blocks.length ? (
                   r.blocks.map((b) => `#${b}`).join(' → ')
                 ) : (
-                  <span className="text-ink-faint/50">
-                    {r.status === 'done' ? 'released' : '—'}
-                  </span>
+                  <span className="text-neutral-500">{r.status === 'done' ? 'released' : '—'}</span>
                 )}
               </span>
               {r.stalled && <span style={{ color: C.bad }}>⚠ stalled</span>}
@@ -114,8 +113,8 @@ function KvViz({ sim }) {
         </div>
       </div>
 
-      <p className="rounded-md bg-panel-2/50 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
-        <span className="text-accent">tick {state.tick}:</span> {state.note}
+      <p className="bg-neutral-200 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
+        <span className="text-accent-700">tick {state.tick}:</span> {state.note}
         {state.blockedByFragmentation > 0 && (
           <span style={{ color: C.bad }}>
             {' '}
@@ -131,71 +130,71 @@ export default function PagedAttention() {
   const sim = useSimulation(kvcache)
 
   return (
-    <>
+    <StageLayout
+      slug="paged-attention"
+      sim={sim}
+      simTitle="The block allocator"
+      simSubtitle="Numbers inside blocks are how many token slots are filled. Colour identifies the owning request; a lighter shade means the block is not yet full. Run it once in each allocator mode."
+      panel={<KvViz sim={sim} />}
+      legend={[
+        { label: 'free', color: C.free },
+        { label: 'owned (full)', color: reqColor(0) },
+        { label: 'owned (partially filled)', color: reqColor(0, { light: true }) },
+      ]}
+      simFooter={
+        <>
+          In <Code>paged</Code> mode watch a request's block table grow non-contiguously —{' '}
+          <Code>#3 → #17 → #4</Code> is perfectly normal, and the attention kernel doesn't care. In{' '}
+          <Code>contiguous</Code> mode every request grabs one solid run up front and holds it
+          regardless of what it ends up using.
+        </>
+      }
+    >
       <p>
-        A decoding sequence needs every key and value vector it has computed so far. Keeping them
-        is the KV cache, and it is the resource that decides how many requests you can serve at
-        once. The question is how to lay it out in VRAM.
+        A decoding sequence needs every key and value vector it has computed so far. Keeping them is
+        the KV cache, and it is the resource that decides how many requests you can serve at once.
+        The question is how to lay it out in VRAM.
       </p>
 
-      <h3>The obvious layout, and why it fails</h3>
+      <h2>The obvious layout, and why it fails</h2>
       <p>
         The straightforward answer is one contiguous buffer per sequence. But you don't know how
         long a sequence will get, so you must reserve for the worst case —{' '}
         <Code>prompt_len + max_tokens</Code>. A request that asks for up to 512 tokens and stops
-        after 30 has been squatting on 482 tokens' worth of VRAM the whole time. Worse, because
-        the reservation must be <em>adjacent</em>, you end up with free blocks scattered in gaps too
+        after 30 has been squatting on 482 tokens' worth of VRAM the whole time. Worse, because the
+        reservation must be <em>adjacent</em>, you end up with free blocks scattered in gaps too
         small to admit anybody, while the total free memory looks plentiful.
       </p>
       <p>
-        Flip the simulator below to <Code>contiguous</Code> and watch three numbers rot: slot
+        Flip the panel on the right to <Code>contiguous</Code> and watch three numbers rot: slot
         efficiency, peak concurrency, and the fragmentation-blocked counter.
       </p>
 
-      <h3>Paging it instead</h3>
+      <h2>Paging it instead</h2>
       <p>
         PagedAttention borrows the trick operating systems use for RAM. The KV cache is carved into
         fixed-size <strong>blocks</strong> — <Code>block_size</Code> defaults to 16 tokens — and a
         sequence gets a <em>block table</em> mapping its logical positions to whatever physical
         blocks happen to be free. Adjacency stops mattering entirely, so external fragmentation
         disappears. Blocks are handed out on demand as a sequence grows, so reservation waste
-        disappears too. The only waste left is the tail of the last, partially-filled block: at
-        most <Code>block_size - 1</Code> token slots per sequence.
+        disappears too. The only waste left is the tail of the last, partially-filled block: at most{' '}
+        <Code>block_size - 1</Code> token slots per sequence.
       </p>
 
-      <SimFrame
-        sim={sim}
-        keys
-        title="The block allocator"
-        subtitle="Numbers inside blocks are how many token slots are filled. Colour identifies the owning request; a lighter shade means the block is not yet full. Run it once in each allocator mode."
-        legend={[
-          { label: 'free', color: C.free },
-          { label: 'owned (full)', color: reqColor(0) },
-          { label: 'owned (partially filled)', color: reqColor(0, { light: true }) },
-        ]}
-        footer={
-          <>
-            In <Code>paged</Code> mode watch a request's block table grow non-contiguously —{' '}
-            <Code>#3 → #17 → #4</Code> is perfectly normal, and the attention kernel doesn't care.
-            In <Code>contiguous</Code> mode every request grabs one solid run up front and holds it
-            regardless of what it ends up using.
-          </>
-        }
-      >
-        <KvViz sim={sim} />
-      </SimFrame>
+      <BlogFigure
+        src="kv_cache_blocks.png"
+        caption="A request's list of KV-cache blocks"
+        max={560}
+      />
 
-      <BlogFigure src="kv_cache_blocks.png" caption="A request's list of KV-cache blocks" max={560} />
-
-      <h3>How allocation actually happens</h3>
+      <h2>How allocation actually happens</h2>
       <p>
         The scheduler calls <Code>allocate_slots</Code>, which does three things:
       </p>
       <ol>
         <li>
-          <strong>Compute the number of blocks.</strong> How many new blocks{' '}
-          <Code>n</Code> does this request need? A prefill with 17 new tokens needs{' '}
-          <Code>ceil(17/16) = 2</Code>.
+          <strong>Compute the number of blocks.</strong> How many new blocks <Code>n</Code> does
+          this request need? A prefill with 17 new tokens needs <Code>ceil(17/16) = 2</Code>.
         </li>
         <li>
           <strong>Check availability.</strong> If the pool is short, bail out early — and depending
@@ -235,9 +234,8 @@ export default function PagedAttention() {
         <p>
           A partially-filled block cannot be cached or shared, because its identity isn't settled
           yet — more tokens are still going to land in it. This is why prefix caching only reuses
-          whole blocks, and why a shared prefix that isn't a multiple of{' '}
-          <Code>block_size</Code> leaves <Code>prefix_len % block_size</Code> tokens to be
-          recomputed every time.
+          whole blocks, and why a shared prefix that isn't a multiple of <Code>block_size</Code>{' '}
+          leaves <Code>prefix_len % block_size</Code> tokens to be recomputed every time.
         </p>
       </Callout>
 
@@ -248,6 +246,6 @@ export default function PagedAttention() {
           'allocate_slots is the choke point: compute n blocks, check the pool, and either take them off free_block_queue or trigger preemption. Everything about memory pressure in vLLM routes through it.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }

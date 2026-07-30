@@ -1,182 +1,90 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { chapters, neighbours, source, stages, stagesOf } from '../../content/roadmap'
+import { source, stages } from '../../content/roadmap'
 
-function Sidebar({ open, onClose }) {
+/*
+ * Site chrome. A 60px sticky header over a 38px stage tick strip — 99px of
+ * total chrome, which is the offset the sticky simulator pane sticks to.
+ *
+ * This replaces the old 264px sidebar. What the sidebar gave that the strip
+ * doesn't is a permanently visible list of stage *titles*; the strip carries
+ * numbers plus a title tooltip, and the map page at `/` is a complete index one
+ * click away.
+ */
+
+export const CHROME_H = 99
+
+const MICRO = 'font-mono text-[10px] tracking-[0.14em] uppercase'
+
+function Header() {
   const { pathname } = useLocation()
-  useEffect(() => {
-    onClose()
-  }, [pathname])
+  const onStage = pathname.includes('/stage/')
+  const current = stages.findIndex((s) => `/stage/${s.slug}` === pathname)
+
+  const navCell =
+    'flex h-[60px] items-center border-l border-edge px-[18px] text-[13px] font-[600] text-ink transition-colors hover:bg-accent-100'
 
   return (
-    <>
-      {open && (
-        <div
-          className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden"
-          onClick={onClose}
-        />
-      )}
-      <aside
-        className={`fixed top-0 left-0 z-40 h-full w-[264px] overflow-y-auto border-r border-edge bg-panel/95 px-4 py-5 backdrop-blur transition-transform lg:translate-x-0 ${
-          open ? 'translate-x-0' : '-translate-x-full'
-        }`}
-      >
-        <Link to="/" className="block">
-          <div className="font-mono text-[0.65rem] tracking-[0.2em] text-accent uppercase">
-            inside vLLM
-          </div>
-          <div className="mt-0.5 text-sm font-semibold text-ink">Interactive roadmap</div>
-        </Link>
-
-        <NavLink
-          to="/"
-          end
-          className={({ isActive }) =>
-            `mt-4 block rounded-md px-2.5 py-1.5 font-mono text-[0.7rem] transition-colors ${
-              isActive ? 'bg-accent/15 text-accent' : 'text-ink-faint hover:bg-panel-2 hover:text-ink-dim'
-            }`
-          }
-        >
-          ◈ the map
-        </NavLink>
-
-        <nav className="mt-5 space-y-5">
-          {chapters.map((ch, ci) => (
-            <div key={ch.id}>
-              <div className="mb-1.5 flex items-baseline gap-1.5 px-1">
-                <span className="font-mono text-[0.6rem] text-ink-faint/60">
-                  {String(ci + 1).padStart(2, '0')}
-                </span>
-                <span className="font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
-                  {ch.title}
-                </span>
-              </div>
-              <ul className="space-y-0.5">
-                {stagesOf(ch.id).map((s) => (
-                  <li key={s.slug}>
-                    <NavLink
-                      to={`/stage/${s.slug}`}
-                      className={({ isActive }) =>
-                        `flex items-baseline gap-2 rounded-md px-2.5 py-1.5 text-[0.78rem] leading-snug transition-colors ${
-                          isActive
-                            ? 'bg-accent/12 text-accent'
-                            : 'text-ink-dim hover:bg-panel-2 hover:text-ink'
-                        }`
-                      }
-                    >
-                      <span className="font-mono text-[0.6rem] text-ink-faint tabular-nums">
-                        {String(s.n).padStart(2, '0')}
-                      </span>
-                      <span>{s.title}</span>
-                    </NavLink>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </nav>
-
-        <div className="mt-8 border-t border-edge pt-4 text-[0.68rem] leading-relaxed text-ink-faint">
-          A companion to{' '}
-          <a
-            href={source.url}
-            target="_blank"
-            rel="noreferrer"
-            className="text-accent underline decoration-accent-dim underline-offset-2"
-          >
-            {source.title}
-          </a>{' '}
-          by {source.author}. Diagrams are from that post. Analysis tracks vLLM V1 at commit{' '}
-          <span className="font-mono">{source.commit}</span>.
-        </div>
-      </aside>
-    </>
-  )
-}
-
-export function PrevNext({ slug }) {
-  const { prev, next } = neighbours(slug)
-  return (
-    <div className="mt-12 grid gap-3 border-t border-edge pt-6 sm:grid-cols-2">
-      {prev ? (
-        <Link
-          to={`/stage/${prev.slug}`}
-          className="group rounded-lg border border-edge px-4 py-3 transition-colors hover:border-edge-bright"
-        >
-          <div className="font-mono text-[0.6rem] tracking-widest text-ink-faint uppercase">
-            ← previous
-          </div>
-          <div className="mt-0.5 text-sm text-ink-dim group-hover:text-ink">{prev.title}</div>
-        </Link>
-      ) : (
-        <div />
-      )}
-      {next && (
-        <Link
-          to={`/stage/${next.slug}`}
-          className="group rounded-lg border border-edge px-4 py-3 text-right transition-colors hover:border-accent-dim"
-        >
-          <div className="font-mono text-[0.6rem] tracking-widest text-accent/70 uppercase">
-            next →
-          </div>
-          <div className="mt-0.5 text-sm text-ink-dim group-hover:text-ink">{next.title}</div>
-        </Link>
-      )}
-    </div>
-  )
-}
-
-export function StageHeader({ stage }) {
-  const ch = chapters.find((c) => c.id === stage.chapter)
-  return (
-    <header className="mb-8 border-b border-edge pb-6">
-      <div className="flex items-center gap-2 font-mono text-[0.62rem] tracking-widest uppercase">
-        <span className="text-accent">stage {String(stage.n).padStart(2, '0')}</span>
-        <span className="text-ink-faint/50">/</span>
-        <span className="text-ink-faint">{ch?.title}</span>
-      </div>
-      <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink">{stage.title}</h1>
-      <p className="mt-2 max-w-2xl text-[0.95rem] leading-relaxed text-ink-dim">{stage.hook}</p>
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        {stage.concepts.map((c) => (
-          <span
-            key={c}
-            className="rounded bg-panel-2 px-1.5 py-0.5 font-mono text-[0.65rem] text-ink-faint ring-1 ring-edge"
-          >
-            {c}
+    <header className="sticky top-0 z-20 bg-surface">
+      <div className="flex items-stretch justify-between gap-5 border-b-2 border-edge">
+        <Link to="/" className="flex items-baseline gap-[9px] px-[18px] sm:px-8">
+          <span className="mt-auto mb-[5px] inline-block h-3 w-3 bg-accent" />
+          <span className="self-center text-[15px] font-[800] tracking-[-0.01em]">Inside vLLM</span>
+          <span className={`${MICRO} hidden self-center text-neutral-600 sm:inline`}>
+            interactive
           </span>
-        ))}
+        </Link>
+        <nav className="flex items-stretch">
+          <NavLink to="/" end className={navCell}>
+            The map
+          </NavLink>
+          <NavLink to={`/stage/${stages[Math.max(0, current)].slug}`} className={navCell}>
+            Stages
+          </NavLink>
+          <a href={source.url} target="_blank" rel="noreferrer" className={navCell}>
+            Source post ↗
+          </a>
+        </nav>
       </div>
+
+      {onStage && (
+        <div className="scroll-x flex h-[38px] items-stretch border-b-2 border-edge">
+          <div
+            className={`${MICRO} flex flex-none items-center border-r border-edge pr-3.5 pl-[18px] text-neutral-600 sm:pl-8`}
+          >
+            stage
+          </div>
+          {stages.map((s, i) => (
+            <Link
+              key={s.slug}
+              to={`/stage/${s.slug}`}
+              title={s.title}
+              className={`flex flex-1 items-center border-r border-edge px-2.5 font-mono text-[11px] font-[600] whitespace-nowrap transition-colors ${
+                i === current
+                  ? 'bg-accent text-surface'
+                  : 'text-neutral-700 hover:bg-accent-100 hover:text-ink'
+              }`}
+              style={{ flexBasis: 42 }}
+            >
+              {String(s.n).padStart(2, '0')}
+            </Link>
+          ))}
+        </div>
+      )}
     </header>
   )
 }
 
 export default function Shell({ children }) {
-  const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [pathname])
 
-  const idx = stages.findIndex((s) => `/stage/${s.slug}` === pathname)
-  const progress = idx >= 0 ? ((idx + 1) / stages.length) * 100 : 0
-
   return (
-    <div className="relative min-h-screen">
-      <div
-        className="fixed top-0 left-0 z-50 h-[2px] bg-accent transition-all duration-500"
-        style={{ width: `${progress}%` }}
-      />
-      <Sidebar open={open} onClose={() => setOpen(false)} />
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="fixed top-3 left-3 z-50 rounded-md border border-edge bg-panel px-2.5 py-1.5 font-mono text-xs text-ink-dim lg:hidden"
-      >
-        ☰ menu
-      </button>
-      <main className="relative z-10 lg:pl-[264px]">
-        <div className="mx-auto max-w-3xl px-5 py-14 sm:px-8 lg:py-16">{children}</div>
-      </main>
+    <div className="min-h-screen bg-surface">
+      <Header />
+      {children}
     </div>
   )
 }

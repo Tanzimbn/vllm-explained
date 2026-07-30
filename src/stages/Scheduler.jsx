@@ -1,6 +1,7 @@
 import { useSimulation } from '../hooks/useSimulation'
+import StageLayout from '../components/layout/StageLayout'
 import scheduler, { BLOCK } from '../sim/scheduler'
-import { Callout, Code, CodeBlock, SimFrame, StatTile, Takeaways } from '../components/ui'
+import { Callout, Code, CodeBlock, StatRow, StatTile, Takeaways } from '../components/ui'
 import { C, MeterBar, QueueLane, StackedBar, Timeline } from '../components/viz'
 
 function SchedViz({ sim }) {
@@ -13,7 +14,7 @@ function SchedViz({ sim }) {
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <StatRow>
         <StatTile
           label="free KV blocks"
           value={state.freeBlocks}
@@ -35,7 +36,7 @@ function SchedViz({ sim }) {
           label="finished"
           value={`${state.requests.filter((r) => r.status === 'done').length}/${state.requests.length}`}
         />
-      </div>
+      </StatRow>
 
       <StackedBar
         label="token budget this step"
@@ -82,7 +83,7 @@ function SchedViz({ sim }) {
       </div>
 
       <div>
-        <div className="mb-2 font-mono text-[0.62rem] tracking-widest text-ink-faint uppercase">
+        <div className="mb-2 font-mono text-[10px] tracking-[0.14em] text-neutral-600 uppercase">
           engine steps →
         </div>
         <Timeline
@@ -94,8 +95,8 @@ function SchedViz({ sim }) {
         />
       </div>
 
-      <p className="rounded-md bg-panel-2/50 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
-        <span className="text-accent">tick {state.tick}:</span> {state.note}
+      <p className="rounded-md bg-neutral-200 px-3 py-2 font-mono text-[0.7rem] leading-relaxed text-ink-dim">
+        <span className="text-accent-700">tick {state.tick}:</span> {state.note}
         {step.preempted.length > 0 && (
           <span style={{ color: C.bad }}> · preempted {step.preempted.join(', ')}</span>
         )}
@@ -117,14 +118,36 @@ export default function Scheduler() {
   const sim = useSimulation(scheduler)
 
   return (
-    <>
+    <StageLayout
+      slug="scheduler"
+      sim={sim}
+      simTitle="The scheduler, tick by tick"
+      simSubtitle="Requests arrive over time. Watch the budget bar split between decode and prefill, and shrink the KV block pool until preemptions start."
+      legend={[
+        { label: 'prefill', color: C.prefill },
+        { label: 'decode', color: C.decode },
+        { label: 'in waiting queue', color: C.free },
+        { label: 'preempted (KV thrown away)', color: C.bad },
+        { label: 'finished', color: C.good },
+      ]}
+      simFooter={
+        <>
+          Two experiments worth running. <strong>Drop “KV blocks” to 6–8:</strong> the pool runs dry
+          mid-decode and you'll see requests get preempted and re-prefilled — watch the
+          recomputed-tokens counter, that's pure waste. <strong>Drop “token budget” to 24</strong>{' '}
+          with a wide prompt spread: long prompts become unschedulable and the sim deadlocks, which
+          is exactly the hole stage 06 fills.
+        </>
+      }
+      panel={<SchedViz sim={sim} />}
+    >
       <p>
         Every engine step begins with one decision: of everything currently in the system, who runs
         now? That decision is made against two hard limits — a per-step{' '}
         <strong>token budget</strong>, and the finite pool of KV blocks from stage 03.
       </p>
 
-      <h3>Decode first</h3>
+      <h2>Decode first</h2>
       <p>
         The scheduler considers the <Code>running</Code> queue before the <Code>waiting</Code>{' '}
         queue. For each running request it:
@@ -155,43 +178,18 @@ export default function Scheduler() {
         </p>
       </Callout>
 
-      <SimFrame
-        sim={sim}
-        keys
-        title="The scheduler, tick by tick"
-        subtitle="Requests arrive over time. Watch the budget bar split between decode and prefill, and shrink the KV block pool until preemptions start."
-        legend={[
-          { label: 'prefill', color: C.prefill },
-          { label: 'decode', color: C.decode },
-          { label: 'in waiting queue', color: C.free },
-          { label: 'preempted (KV thrown away)', color: C.bad },
-          { label: 'finished', color: C.good },
-        ]}
-        footer={
-          <>
-            Two experiments worth running. <strong>Drop “KV blocks” to 6–8:</strong> the pool runs
-            dry mid-decode and you'll see requests get preempted and re-prefilled — watch the
-            recomputed-tokens counter, that's pure waste. <strong>Drop “token budget” to 24</strong>{' '}
-            with a wide prompt spread: long prompts become unschedulable and the sim deadlocks, which
-            is exactly the hole stage 06 fills.
-          </>
-        }
-      >
-        <SchedViz sim={sim} />
-      </SimFrame>
-
-      <h3>allocate_slots, and what happens when it fails</h3>
+      <h2>allocate_slots, and what happens when it fails</h2>
       <p>
         <Code>allocate_slots</Code> computes how many new blocks are needed —{' '}
         <Code>ceil(new_tokens / {BLOCK})</Code> — and checks the pool. If there isn't enough, the
-        engine has two options, and which one it takes depends on whether the request is a decode
-        or a prefill.
+        engine has two options, and which one it takes depends on whether the request is a decode or
+        a prefill.
       </p>
       <p>
-        For a prefill, it simply doesn't get scheduled; it waits for a later step. For a decode,
-        the engine may attempt <strong>recompute preemption</strong>: evict a lower-priority
-        request by calling <Code>kv_cache_manager.free</Code>, returning its blocks to the pool so
-        the decode can continue.
+        For a prefill, it simply doesn't get scheduled; it waits for a later step. For a decode, the
+        engine may attempt <strong>recompute preemption</strong>: evict a lower-priority request by
+        calling <Code>kv_cache_manager.free</Code>, returning its blocks to the pool so the decode
+        can continue.
       </p>
 
       <Callout kind="gotcha" title="Preemption is not free — it is negative work">
@@ -208,7 +206,7 @@ export default function Scheduler() {
         </p>
       </Callout>
 
-      <h3>Policy: FCFS or priority</h3>
+      <h2>Policy: FCFS or priority</h2>
       <p>
         The waiting queue is ordered by the scheduler's policy setting. Under <Code>FCFS</Code> it's
         a plain append — arrival order wins. Under <Code>priority</Code> it's a heap push, and a
@@ -242,6 +240,6 @@ for req in waiting:                  # then prefills, with what's left
           'Recompute preemption trades thrown-away prefill work for forward progress on decodes. It keeps the engine alive under pressure, but sustained preemption means your capacity settings are wrong.',
         ]}
       />
-    </>
+    </StageLayout>
   )
 }
