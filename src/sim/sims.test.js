@@ -426,6 +426,27 @@ describe('scheduler', () => {
 })
 
 describe('forward pass — flattening and slot_mapping', () => {
+  /**
+   * Stage 05 derives the slot arithmetic on the panel's own default batch, and
+   * quotes the block table and both slot numbers. Pinned so the worked example
+   * cannot go stale.
+   */
+  it('produces exactly the batch the stage 05 prose works through', () => {
+    const b = buildBatch({ numPrefill: 2, numDecode: 3, blockSize: 4 })
+
+    expect(b.flat).toHaveLength(17)
+    expect(b.starts).toEqual([0, 7, 14, 15, 16])
+    expect(b.gatherRows).toEqual([6, 13, 14, 15, 16])
+
+    const p0 = b.requests.find((r) => r.id === 'P0')
+    expect(p0.blocks).toEqual([52, 34])
+
+    // The two neighbouring positions the page walks through by hand.
+    const slotAt = (id, pos) => b.flat.find((f) => f.reqId === id && f.pos === pos).slot
+    expect(slotAt('P0', 3)).toBe(211) // block_table[0] = 52 -> 52 * 4 + 3
+    expect(slotAt('P0', 4)).toBe(136) // block_table[1] = 34 -> 34 * 4 + 0
+  })
+
   it('invariants hold for every batch composition', () => {
     for (const numPrefill of [0, 1, 2, 3]) {
       for (const numDecode of [0, 1, 4]) {

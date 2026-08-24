@@ -235,7 +235,7 @@ const READABILITY_BUDGET = {
   'engine-anatomy': { avg: 16.0, max: 30 },
   'paged-attention': { avg: 16.0, max: 31 },
   scheduler: { avg: 15.5, max: 28 },
-  'forward-pass': { avg: 17.0, max: 35 },
+  'forward-pass': { avg: 16.5, max: 32 },
   'chunked-prefill': { avg: 18.0, max: 33 },
   'prefix-caching': { avg: 20.5, max: 40 },
   'guided-decoding': { avg: 18.0, max: 45 },

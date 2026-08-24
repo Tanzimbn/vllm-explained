@@ -171,6 +171,10 @@ That is the whole audience: someone competent who has never run a server. Stage 
   stage and let the later stage own the mechanism; link with `<StageRef>` so the reader can jump.
 - **Cross-stage references are links, never prose.** Write `<StageRef n={7} />`, not "stage 07" —
   the text comes from `roadmap.js`, and a test fails on any bare `stage NN` left in a stage file.
+- **Never open a sentence with something lowercase.** Not a bare `<Code>slot_mapping</Code>`, not a
+  short-form `<StageRef>` (which renders "stage 06"). Rephrase, or use `<StageRef n={6} title />`,
+  which renders "Chunked prefill (stage 06)". It reads better, and the readability check treats a
+  lowercase start as a continuation of the previous sentence.
 - **Bind paragraphs to the simulator with specific actions.** "Set `block_size` to 4 and step six
   times; watch row 3 jump" beats "watch the panel on the right".
 - **Derive a number in the prose before it appears in a `<Takeaways>`.** Takeaways recap; they do
