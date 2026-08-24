@@ -271,6 +271,11 @@ export default function ForwardPass() {
       sim={flat}
       simTitle="Batch flattening & slot_mapping"
       simSubtitle="Colour identifies the owning request. Set block_size to 4 to make the slot arithmetic easy to follow; ▲ marks a sequence boundary in cu_seqlens."
+      tryThis={[
+        'Leave block_size at 4 and step to the end: 17 rows, five gathers.',
+        'Watch slot_mapping as P0 crosses from position 3 to position 4. Slot 211 jumps to 136.',
+        'Set Prefills in batch to 0: every row is now a decode, exactly one per request.',
+      ]}
       panel={<ForwardViz sim={flat} />}
       legend={[
         { label: 'prefill request', color: C.prefill },

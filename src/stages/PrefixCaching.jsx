@@ -194,6 +194,11 @@ export default function PrefixCaching() {
           uncacheable forever, so those tokens get recomputed on every single request.
         </>
       }
+      tryThis={[
+        'Run with caching on: R0 computes all 76 of its tokens, R1 and R2 only 12 each.',
+        'Switch it off: 228 tokens computed instead of 100.',
+        'Move Shared prefix from 64 to 72. No extra hits, and every later request now computes 20 tokens instead of 12.',
+      ]}
       panel={<PrefixViz sim={sim} />}
     >
       <p>

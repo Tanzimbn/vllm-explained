@@ -240,6 +240,11 @@ export default function DisaggregatedPD() {
           win stays flat: this is why the connector implementation matters so much in practice.
         </>
       }
+      tryThis={[
+        'Run colocated: the worst inter-token gap is 82ms against a typical 6.5ms.',
+        'Switch to disaggregated: p95 ITL drops to 6.5ms, and mean TTFT rises from 255ms to 379ms.',
+        'Push KV transfer from 1 to 4. TTFT goes from 316ms to 456ms while the ITL win does not budge.',
+      ]}
       panel={<PdViz sim={sim} />}
     >
       <p>

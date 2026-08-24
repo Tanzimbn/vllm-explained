@@ -159,6 +159,11 @@ export default function ChunkedPrefill() {
           the prompt gets chunked implicitly to fit the budget.
         </>
       }
+      tryThis={[
+        'Run with chunking off: one token takes 99ms against a typical 6ms.',
+        'Switch it on: every gap is 18ms, and the run still takes the same 10 steps and 156ms.',
+        'Compare thresholds 512 and 64. The spike falls from 8× to nothing while the long prompt\'s own TTFT climbs from 105ms to 192ms.',
+      ]}
       panel={<ChunkViz sim={sim} />}
     >
       <p>

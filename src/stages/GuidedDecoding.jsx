@@ -218,6 +218,11 @@ export default function GuidedDecoding() {
           word. The model never changed — only what it was allowed to say.
         </>
       }
+      tryThis={[
+        'Run with guiding on: 8 steps, the word Positive, no illegal characters.',
+        'Turn it off. The same scores now give Posx.',
+        'Lean the model toward Negative with guiding still off: it emits 7 on the very first step.',
+      ]}
       panel={<GuidedViz sim={sim} />}
     >
       <p>

@@ -416,3 +416,48 @@ describe('analogies are offered where they earn their place', () => {
     expect(html.indexOf('Intuition')).toBeGreaterThan(-1)
   })
 })
+
+describe('every simulator carries a Try this checklist', () => {
+  /**
+   * This exists for focus mode. "Focus simulator" takes the prose out of flow
+   * entirely, so without it a reader who wants the instrument full-width has no
+   * instructions beyond one paragraph of footer. It lives inside the pane, which
+   * is the part that stays on screen.
+   */
+  for (const [slug, Comp] of Object.entries(PAGES)) {
+    it(`${slug} lists experiments inside the pane`, () => {
+      const html = render(Comp)
+      const pane = html.slice(html.indexOf('<aside'))
+      expect(pane, 'the checklist is not in the simulator pane').toContain('Try this')
+      // Numbered, and at least two things to actually do.
+      expect(pane).toContain('01')
+      expect(pane).toContain('02')
+    })
+  }
+
+  it('states knob settings rather than gesturing at the panel', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const stagesDir = dirname(fileURLToPath(import.meta.url))
+
+    const vague = []
+    for (const f of readdirSync(stagesDir)) {
+      if (!f.endsWith('.jsx') || f.endsWith('.test.jsx')) continue
+      const src = readFileSync(join(stagesDir, f), 'utf8')
+      const block = src.match(/tryThis=\{\[([\s\S]*?)\n      \]\}/)
+      if (!block) continue
+      const items = block[1].split('\n').filter((l) => l.trim().startsWith("'"))
+      expect(items.length, `${f} needs at least two experiments`).toBeGreaterThan(1)
+      // A checklist entry has to name something concrete: a number, or a knob
+      // value. "Watch the panel" is what this replaced.
+      // Concrete means a figure, or an explicit knob state like on/off.
+      items.forEach((l) => {
+        if (!/\d/.test(l) && !/\b(on|off)\b/.test(l)) {
+          vague.push(`${f}: ${l.trim().slice(0, 60)}`)
+        }
+      })
+    }
+    expect(vague, 'every entry should name a setting or a figure').toEqual([])
+  })
+})

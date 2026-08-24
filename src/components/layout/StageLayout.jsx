@@ -79,6 +79,7 @@ export default function StageLayout({
   knobs,
   legend,
   simFooter,
+  tryThis,
   keys = true,
   children,
 }) {
@@ -106,6 +107,7 @@ export default function StageLayout({
           knobs={knobs}
           legend={legend}
           footer={simFooter}
+          tryThis={tryThis}
           keys={keys}
           right={
             <button

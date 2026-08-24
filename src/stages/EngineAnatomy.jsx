@@ -51,6 +51,10 @@ export default function EngineAnatomy() {
       sim={sim}
       simTitle="One request through the whole engine"
       simSubtitle="The highlighted box is the part doing work right now. The dashed arrows only matter later on: freed blocks going back to the pool, and the grammar mask reaching into sampling."
+      tryThis={[
+        'Step 9 times to follow one request from the processor out to the caller, reading each caption as it lights up.',
+        'Notice it passes through schedule, forward pass and postprocess 2 times before finishing. That is the decode loop.',
+      ]}
       panel={<EngineViz sim={sim} />}
     >
       <p>

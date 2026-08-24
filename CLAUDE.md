@@ -107,7 +107,11 @@ return (
 ```
 
 `StageLayout` (`components/layout/StageLayout.jsx`) owns the grid: prose left, the primary simulator
-**pinned sticky** right under the 99px of chrome, plus the focus toggle and prev/next. Below `lg` it
+**pinned sticky** right under the 99px of chrome, plus the focus toggle and prev/next. Every stage
+also passes `tryThis` — two or three numbered experiments naming exact knob settings, rendered
+inside the pane under the transport. That is for focus mode, which takes the prose out of flow
+entirely; `stages.test.jsx` requires one per stage and rejects an entry that names no setting or
+figure. Below `lg` it
 stacks and CSS `order` puts the pane above the body prose. Several pages say "the panel on the
 right" in their copy, and `stages.test.jsx` asserts the structure — so a stage's primary sim belongs
 in `panel`, never inline.
@@ -121,7 +125,8 @@ still identifies its stage.
 `Benchmarking.jsx` have one, and a test pins that list.
 
 Shared chrome is in `src/components/ui/index.jsx` (SimPanel, SimFrame, StepControls, Knob, Callout,
-CodeBlock, BlogFigure, StatRow + StatTile, Badge, Legend, Takeaways, StageRef, ActBridge); shared visualizations in
+CodeBlock, BlogFigure, StatRow + StatTile, Badge, Legend, Takeaways, TryThis, StageRef,
+ActBridge); shared visualizations in
 `src/components/viz/index.jsx` (BlockGrid, QueueLane, TokenStrip, Timeline, DistChart, LineChart,
 NodeGraph, MeterBar, StackedBar).
 

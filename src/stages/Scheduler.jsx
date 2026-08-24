@@ -139,6 +139,11 @@ export default function Scheduler() {
           so. That is exactly the hole <StageRef n={6} /> fills.
         </>
       }
+      tryThis={[
+        'Run as-is: 20 steps, nobody preempted.',
+        'Drop KV blocks to 8: one preemption, and 55 tokens of prefill work destroyed.',
+        'Set Prompt-length spread to 90 and Token budget to 24. The run stops — that prompt can never be scheduled.',
+      ]}
       panel={<SchedViz sim={sim} />}
     >
       <p>

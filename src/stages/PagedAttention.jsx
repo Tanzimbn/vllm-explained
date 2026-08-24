@@ -136,6 +136,11 @@ export default function PagedAttention() {
       sim={sim}
       simTitle="The block allocator"
       simSubtitle="Numbers inside blocks are how many token slots are filled. Colour identifies the owning request; a lighter shade means the block is not yet full. Run it once in each allocator mode."
+      tryThis={[
+        'Run on paged, then switch Allocator to contiguous: 7 requests in flight becomes 3, and slot efficiency falls to 35%.',
+        'In contiguous, set Requests to 10. Six admissions get blocked by fragmentation alone.',
+        'In paged, set Requests to 10. The pool empties and the run wedges — which is what preemption exists to fix.',
+      ]}
       panel={<KvViz sim={sim} />}
       legend={[
         { label: 'free', color: C.free },

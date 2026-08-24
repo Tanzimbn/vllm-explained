@@ -247,6 +247,11 @@ export default function MultiProcExecutor() {
           communication. This is the entire reason TP isn't simply set as high as you have GPUs.
         </>
       }
+      tryThis={[
+        'Step through at TP=8: one broadcast, then compute and all-reduce per layer, then a collect.',
+        'Compare TP=4 and TP=8 at all-reduce cost 1. Both give 2.0× — the extra four GPUs buy nothing.',
+        'Set All-reduce cost to 0 for perfect 8× scaling, then to 4, where TP=8 comes out slower than one GPU.',
+      ]}
       panel={<TpViz sim={sim} />}
     >
       <p>

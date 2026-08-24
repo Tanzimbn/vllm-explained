@@ -224,6 +224,11 @@ export default function SpeculativeDecoding() {
           character of the technique: it trades throughput risk for zero quality risk.
         </>
       }
+      tryThis={[
+        'Let it run a few hundred rounds: about 62% of drafts accepted, roughly 3.5 tokens a round, 2.5× overall.',
+        'Drag draft agreement to 0 and keep going. The speedup collapses and the histogram still matches the target exactly.',
+        'At agreement 0.2, sweep k: the peak is near 3, and k = 7 is worse than k = 3.',
+      ]}
       panel={<SpecViz sim={sim} />}
     >
       <p>

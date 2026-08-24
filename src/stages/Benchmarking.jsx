@@ -284,6 +284,11 @@ export default function Benchmarking() {
       sim={roof}
       simTitle="Roofline sweep"
       simSubtitle="Step the batch size up a geometric ladder. The dashed lines are the two competing costs; the solid line is their max, which is what you actually pay."
+      tryThis={[
+        'Step to B = 256: still 4.8ms a step, with throughput up from 209 to 53,600 tokens a second.',
+        'Set Model size to 70. The flat line lifts to 41.8ms and B_sat does not move.',
+        'Drop HBM bandwidth to 1: now B_sat moves, to 990. The knee belongs to the GPU, not the model.',
+      ]}
       panel={<RooflineViz sim={roof} />}
       legend={[
         { label: 'step latency (what you pay)', color: C.decode },

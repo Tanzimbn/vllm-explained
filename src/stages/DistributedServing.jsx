@@ -197,6 +197,10 @@ export default function DistributedServing() {
           than the last.
         </>
       }
+      tryThis={[
+        'At Request-cost skew 0, round-robin (0.81) beats vLLM score (0.89). Counting requests is enough when they are identical.',
+        'Set skew to 10 and Arrivals per step to 5. Score holds at 1.07 while round-robin reaches 2.60 and random 9.15.',
+      ]}
       panel={<LbViz sim={sim} />}
     >
       <p>

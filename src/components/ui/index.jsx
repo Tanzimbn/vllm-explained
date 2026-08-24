@@ -404,6 +404,7 @@ export function SimPanel({
   keys = false,
   children,
   footer,
+  tryThis,
   right,
 }) {
   return (
@@ -432,13 +433,43 @@ export function SimPanel({
         </div>
       )}
 
-      <div className="border-y-2 border-edge">
+      <div className="border-t-2 border-edge">
         <StepControls sim={sim} keys={keys} />
       </div>
+
+      {/* Directly under the transport, because it is a list of things to press. */}
+      {tryThis && <TryThis items={tryThis} />}
+      {!tryThis && <div className="border-b-2 border-edge" />}
 
       {footer && (
         <div className="px-6 py-4 text-[13px] leading-[1.6] text-neutral-700">{footer}</div>
       )}
+    </div>
+  )
+}
+
+/**
+ * A short numbered list of experiments, inside the simulator pane.
+ *
+ * It exists for focus mode. "Focus simulator" takes the prose out of flow
+ * entirely, so a reader who wants the instrument full-width previously had no
+ * instructions at all beyond one paragraph of footer. This is a checklist with
+ * exact knob settings, not an explanation — the prose still owns the why.
+ */
+export function TryThis({ items }) {
+  return (
+    <div className="border-b-2 border-edge px-6 py-4">
+      <div className={`${MICRO} mb-2.5 text-accent-700`}>Try this</div>
+      <ol className="grid gap-2">
+        {items.map((t, i) => (
+          <li key={i} className="grid grid-cols-[22px_1fr] gap-2">
+            <span className="font-mono text-[11px] text-neutral-600">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <span className="text-[13px] leading-[1.5] text-neutral-800">{t}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }

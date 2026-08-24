@@ -105,6 +105,10 @@ export default function PrefillVsDecode() {
       sim={sim}
       simTitle="Static vs continuous batching"
       simSubtitle="One tick is one engine step. Each request's first step is its prefill; the rest are decodes. Turn up the output-length spread to make the effect brutal."
+      tryThis={[
+        'Run on static, then switch Batching to continuous: 23 wasted slot-steps become 7.',
+        'Set Output-length spread to 0 and run both modes. Identical, and nothing wasted — the waste was never batching itself.',
+      ]}
       panel={<BatchingViz sim={sim} />}
       legend={[
         { label: 'prefill step', color: C.prefill },
