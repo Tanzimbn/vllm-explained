@@ -11,6 +11,7 @@ import chunkedPrefill, { itlStats } from './chunkedPrefill'
 import prefixCache, { findLongestCacheHit, hashRequestTokens } from './prefixCache'
 import guidedDecoding, {
   allowedAt,
+  buildBitmask,
   isAccepting,
   VOCAB as GD_VOCAB,
   WORDS,
@@ -782,6 +783,31 @@ describe('prefix caching', () => {
 })
 
 describe('guided decoding', () => {
+  /**
+   * Stage 08 quotes all four runs, because the whole argument is that the same
+   * scores produce a valid word or garbage depending only on masking. The
+   * "leans toward Negative" case is quoted too: it used to come out "Positive",
+   * because the nudge lost to the random term.
+   */
+  it('produces exactly the four runs the stage 08 prose describes', () => {
+    const emit = (p) => {
+      const { state } = runSim(guidedDecoding, p, 200)
+      return [state.emitted, state.violations, state.tick]
+    }
+
+    expect(emit({ guided: 'on', sentiment: 'positive' })).toEqual(['Positive', 0, 8])
+    expect(emit({ guided: 'on', sentiment: 'negative' })).toEqual(['Negative', 0, 8])
+
+    // Identical scores, no mask: the junk tokens win.
+    expect(emit({ guided: 'off', sentiment: 'positive' })).toEqual(['Posx', 1, 4])
+    expect(emit({ guided: 'off', sentiment: 'negative' })).toEqual(['7', 1, 1])
+
+    // The mask the page prints: 16-token vocab, only P and N legal at step one.
+    const mask = buildBitmask(allowedAt({ pos: 0, branch: null }))
+    expect(mask.value).toBe(129)
+    expect(mask.binary).toBe('0000000010000001')
+  })
+
   it('invariants hold for every configuration', () => {
     for (const guided of ['on', 'off']) {
       for (const sentiment of ['positive', 'negative']) {

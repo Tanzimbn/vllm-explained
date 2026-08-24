@@ -238,7 +238,7 @@ const READABILITY_BUDGET = {
   'forward-pass': { avg: 16.5, max: 32 },
   'chunked-prefill': { avg: 15.2, max: 27 },
   'prefix-caching': { avg: 14.8, max: 31 },
-  'guided-decoding': { avg: 18.0, max: 45 },
+  'guided-decoding': { avg: 14.9, max: 29 },
   'speculative-decoding': { avg: 16.0, max: 37 },
   'disaggregated-pd': { avg: 17.0, max: 30 },
   'multiproc-executor': { avg: 18.5, max: 38 },
