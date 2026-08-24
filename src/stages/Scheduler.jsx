@@ -1,7 +1,16 @@
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import scheduler, { BLOCK } from '../sim/scheduler'
-import { Callout, Code, CodeBlock, StageRef, StatRow, StatTile, Takeaways } from '../components/ui'
+import {
+  Callout,
+  Code,
+  CodeBlock,
+  StageRef,
+  StatRow,
+  StatTile,
+  Takeaways,
+  Term,
+} from '../components/ui'
 import { C, MeterBar, QueueLane, StackedBar, Timeline } from '../components/viz'
 
 function SchedViz({ sim }) {
@@ -151,7 +160,7 @@ export default function Scheduler() {
         The scheduler answers it against two hard limits.
       </p>
       <p>
-        The first is the <strong>token budget</strong> — <Code>max_num_batched_tokens</Code>, the
+        The first is the <Term>token budget</Term> — <Code>max_num_batched_tokens</Code>, the
         most tokens the engine will put through one forward pass. The second is the pool of KV
         blocks from <StageRef n={3} />, which is finite and already spoken for by whoever is
         running.
@@ -195,12 +204,12 @@ export default function Scheduler() {
         what happens next depends on who was asking.
       </p>
       <p>
-        A <strong>prefill</strong> is simply not scheduled. It stays in <Code>waiting</Code> and
+        A <Term>prefill</Term> is simply not scheduled. It stays in <Code>waiting</Code> and
         tries again on a later step. Nothing is lost, because it had not started.
       </p>
       <p>
-        A <strong>decode</strong> is different, because stopping it would strand a half-finished
-        answer. So the engine may <strong>preempt</strong> somebody instead: pick a lower-priority
+        A <Term>decode</Term> is different, because stopping it would strand a half-finished
+        answer. So the engine may <Term>preempt</Term> somebody instead: pick a lower-priority
         request, call <Code>kv_cache_manager.free</Code> on it, and hand its blocks to the decode
         that needed them.
       </p>

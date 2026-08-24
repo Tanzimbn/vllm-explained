@@ -37,6 +37,10 @@ const ENTRIES = [
   ['Scheduler', 2, 'Decides who runs on each step. Holds the waiting and running queues, the policy, and the KV-cache manager.'],
   ['KVCacheManager', 2, 'Owns the pool of KV blocks. Hands them out through allocate_slots and takes them back when a request ends.'],
   ['step()', 2, 'One turn of the engine loop, always the same three phases: schedule, forward pass, postprocess. Every feature on this site hooks into one of them.'],
+  ['vLLM config', 2, 'One bag holding every setting: which model, how big the cache may be, how many GPUs to spread across.'],
+  ['model executor', 2, 'Drives the forward passes. A UniProcExecutor on one GPU to begin with, a MultiProcExecutor across many later, with nothing above it noticing.'],
+  ['structured output manager', 2, 'Keeps output to a shape you asked for, such as valid JSON, by masking the logits before sampling.'],
+  ['output processor', 2, 'The back door. Turns the engine’s raw EngineCoreOutputs into the RequestOutput a caller actually reads.'],
   ['engine core client', 2, 'The seam between the caller and the EngineCore. In one process it is an InprocClient and the call is an ordinary function call; online it becomes a socket to another process.'],
   ['gpu_memory_utilization', 2, 'The fraction of VRAM vLLM may claim. It decides how much is left for the KV cache after the weights load, and therefore how many requests fit at once.'],
 
@@ -93,6 +97,7 @@ const ENTRIES = [
 
   // ---------------------------------------------------------------- stage 09
   ['draft model', 9, 'The cheap model that guesses the next k tokens. It affects speed only — never the output distribution, because the verification step corrects for it.'],
+  ['target model', 9, 'The large model doing the real work. It verifies the draft’s guesses in one pass, which is what makes speculation exact rather than approximate.'],
   ['rejection sampling', 9, 'The accept-or-reject rule that keeps speculation exact. Accept if the target’s probability is at least the draft’s, otherwise accept with probability p_target / p_draft, and stop at the first rejection.'],
   ['acceptance rate', 9, 'The share of drafted tokens that survive verification. It sets the speedup, and it falls as k grows because acceptance compounds.'],
   ['n-gram', 9, 'A drafter with no weights at all: it looks for a recent repeat of the current text and proposes what followed last time. Free, and very good on repetitive input.'],
@@ -129,6 +134,8 @@ const ENTRIES = [
   ['ITL', 13, 'Inter-token latency: the gap between one token of an answer and the next. What a person notices while it streams.'],
   ['TPOT', 13, 'Time per output token: the mean ITL across a request.'],
   ['E2E', 13, 'End-to-end latency for a whole request. TTFT plus the sum of the ITLs — note that 10 tokens means 9 gaps.'],
+  ['latency', 13, 'How long a request waits before tokens come back. Measured three ways here: TTFT, ITL and E2E.'],
+  ['auto-tune', 13, 'vLLM’s script for searching argument settings that maximise goodput against a target, by driving the serve benchmark repeatedly.'],
   ['throughput', 13, 'Tokens or requests per second across everybody. Easy to inflate by raising the batch size until nobody’s ITL is acceptable.'],
   ['goodput', 13, 'Throughput counting only requests that met their SLOs. The one headline number that raising the batch size cannot fake.'],
   ['roofline', 13, 'The shape of step time against batch size: a flat ceiling set by memory bandwidth, then a slope set by compute. You are always under one or the other.'],
@@ -143,6 +150,32 @@ export const glossary = ENTRIES.map(([term, stage, def]) => ({
 }))
 
 export const glossaryByTerm = Object.fromEntries(glossary.map((g) => [g.term, g]))
+
+/**
+ * Ways the prose says a term that are not the glossary's own spelling. Bold in
+ * the prose is authored for the sentence, not for the index, so "finite state
+ * machine" and "preempt" have to find their way home.
+ */
+const ALIASES = {
+  'finite state machine': 'FSM',
+  preempt: 'preemption',
+  'cuda graph': 'CUDA graphs',
+  'kv cache manager': 'KVCacheManager',
+  'internal fragmentation': 'fragmentation',
+  'external fragmentation': 'fragmentation',
+  driver: 'driver worker',
+}
+
+/**
+ * Resolve a phrase as the prose writes it to its glossary entry, or null.
+ * Case-insensitive, because a term that opens a sentence is capitalised.
+ */
+export function lookupTerm(text) {
+  if (typeof text !== 'string') return null
+  const key = text.trim().toLowerCase()
+  const canonical = ALIASES[key] ?? key
+  return glossary.find((g) => g.term.toLowerCase() === canonical.toLowerCase()) ?? null
+}
 
 /** Every term introduced by a given stage, in the order it is listed above. */
 export function termsOf(stageNumber) {

@@ -11,6 +11,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, MeterBar } from '../components/viz'
 
@@ -173,8 +174,8 @@ export default function ChunkedPrefill() {
       </p>
       <p>
         Two words for the damage, because they are the words everyone measures with.{' '}
-        <strong>TTFT</strong> is time to first token: how long you wait after sending a prompt
-        before any text appears. <strong>ITL</strong> is inter-token latency: the gap between one
+        <Term>TTFT</Term> is time to first token: how long you wait after sending a prompt
+        before any text appears. <Term>ITL</Term> is inter-token latency: the gap between one
         token of the answer and the next, once text is flowing.
       </p>
 

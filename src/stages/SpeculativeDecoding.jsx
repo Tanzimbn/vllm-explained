@@ -12,6 +12,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, DistChart, LineChart } from '../components/viz'
 
@@ -256,8 +257,8 @@ export default function SpeculativeDecoding() {
 
       <h2>Draft, verify, and be careful about it</h2>
       <p>
-        A small, cheap <strong>draft model</strong> guesses the next <Code>k</Code> tokens. The big{' '}
-        <strong>target model</strong> then runs <em>once</em> over the context plus those guesses.
+        A small, cheap <Term>draft model</Term> guesses the next <Code>k</Code> tokens. The big{' '}
+        <Term>target model</Term> then runs <em>once</em> over the context plus those guesses.
       </p>
       <p>
         One pass gives probabilities at all <Code>k</Code> guessed positions, plus one position

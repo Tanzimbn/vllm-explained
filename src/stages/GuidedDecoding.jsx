@@ -10,6 +10,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, DistChart } from '../components/viz'
 
@@ -237,7 +238,7 @@ export default function GuidedDecoding() {
 
       <h2>Grammar becomes a state machine</h2>
       <p>
-        A grammar is compiled into a <strong>finite state machine</strong>, or FSM: a small set of
+        A grammar is compiled into a <Term>finite state machine</Term>, or FSM: a small set of
         states, each of which knows which characters may come next. Think of it as a map with
         one-way streets.
       </p>

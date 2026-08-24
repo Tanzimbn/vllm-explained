@@ -11,6 +11,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { BlockGrid, C, reqColor } from '../components/viz'
 
@@ -230,7 +231,7 @@ export default function PrefixCaching() {
       <Callout kind="note" title="What else goes into the hash">
         <p>
           The optional metadata includes the multimodal hash, the LoRA id, and a{' '}
-          <strong>cache salt</strong>. The salt is mixed into the first block's hash, so only
+          <Term>cache salt</Term>. The salt is mixed into the first block's hash, so only
           requests carrying the same salt can match those blocks. That is how one shared cache gives
           separate tenants isolation from each other.
         </p>
@@ -283,7 +284,7 @@ export default function PrefixCaching() {
       <p>
         This is the subtle part, and it is where the FIFO free queue pays off. When a request
         finishes, its blocks go back to <Code>free_block_queue</Code> and their{' '}
-        <strong>refcount</strong> — the number of requests currently using that block — drops to
+        <Term>refcount</Term> — the number of requests currently using that block — drops to
         zero.
       </p>
       <p>

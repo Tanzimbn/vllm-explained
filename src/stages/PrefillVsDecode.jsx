@@ -1,7 +1,16 @@
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import batching, { utilization } from '../sim/batching'
-import { Callout, Code, CodeBlock, StageRef, StatRow, StatTile, Takeaways } from '../components/ui'
+import {
+  Callout,
+  Code,
+  CodeBlock,
+  StageRef,
+  StatRow,
+  StatTile,
+  Takeaways,
+  Term,
+} from '../components/ui'
 import { C, QueueLane, Timeline } from '../components/viz'
 
 function BatchingViz({ sim }) {
@@ -136,34 +145,34 @@ export default function PrefillVsDecode() {
 
       <h2>The two jobs</h2>
       <p>
-        <strong>Prefill</strong> is the first job. The model reads your whole prompt and works out
+        <Term>Prefill</Term> is the first job. The model reads your whole prompt and works out
         one thing: the first token of the reply. Every token of the prompt is handled at the same
         time, because they are all already known.
       </p>
       <p>
         That is a lot of arithmetic, and none of it waits on anything else. The limit is simply how
-        fast the GPU can multiply, so we call prefill <strong>compute-bound</strong>. Give the chip
+        fast the GPU can multiply, so we call prefill <Term>compute-bound</Term>. Give the chip
         more of this work and it will keep up.
       </p>
       <p>
-        <strong>Decode</strong> is the second job. It runs once for every token after the first,
+        <Term>Decode</Term> is the second job. It runs once for every token after the first,
         and each run reads exactly one token — the one just produced — to predict the next.
       </p>
       <p>
         One token is barely any arithmetic. The model kept its working from all the earlier tokens
-        in a scratchpad called the <strong>KV cache</strong>, so nothing gets recomputed. What that
+        in a scratchpad called the <Term>KV cache</Term>, so nothing gets recomputed. What that
         cache holds, and why storing it is hard, is the subject of <StageRef n={3} />.
       </p>
       <p>
         But there is a catch, and it is the reason this whole field exists. To predict that single
         token, the GPU still has to drag every weight in the model out of memory and through the
-        arithmetic units. That memory is <strong>HBM</strong>, the bank of high-bandwidth chips
+        arithmetic units. That memory is <Term>HBM</Term>, the bank of high-bandwidth chips
         sitting beside the GPU. On a large model it means moving tens of gigabytes to produce a
         couple of bytes of output.
       </p>
       <p>
         So the arithmetic units now sit mostly idle, waiting to be fed. The limit has moved to
-        memory, which is why decode is called <strong>memory-bandwidth-bound</strong>. Per token it
+        memory, which is why decode is called <Term>memory-bandwidth-bound</Term>. Per token it
         is a terrible deal.
       </p>
 
@@ -200,7 +209,7 @@ export default function PrefillVsDecode() {
         and the expensive part is paid once rather than <Code>B</Code> times.
       </p>
       <p>
-        The simple way to do that is <strong>static batching</strong>. Collect <Code>B</Code>{' '}
+        The simple way to do that is <Term>static batching</Term>. Collect <Code>B</Code>{' '}
         requests, run them together until every one of them has finished, return the results, then
         collect the next <Code>B</Code>.
       </p>
@@ -230,7 +239,7 @@ export default function PrefillVsDecode() {
 
       <h2>Continuous batching</h2>
       <p>
-        <strong>Continuous batching</strong> (from a system called Orca) changes when the engine is
+        <Term>Continuous batching</Term> (from a system called Orca) changes when the engine is
         allowed to reshuffle. Rather than admitting and retiring a whole batch at a time, it does
         both after every single step.
       </p>

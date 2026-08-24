@@ -12,6 +12,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, LineChart } from '../components/viz'
 
@@ -263,7 +264,7 @@ function RooflineViz({ sim }) {
           })}
         </div>
         <p className="mt-2 text-[0.75rem] leading-relaxed text-ink-faint">
-          The largest green number is the batch size that maximizes <strong>goodput</strong>: the
+          The largest green number is the batch size that maximizes <Term>goodput</Term>: the
           most throughput you can buy without breaking the latency promise. That's the number an
           auto-tuner is searching for.
         </p>
@@ -316,13 +317,13 @@ export default function Benchmarking() {
         There are two headline numbers, and they pull against each other.
       </p>
       <p>
-        <strong>Latency</strong> is how long a request waits before tokens come back. It is what
-        matters when a person is sitting there. <strong>Throughput</strong> is tokens or requests
+        <Term>Latency</Term> is how long a request waits before tokens come back. It is what
+        matters when a person is sitting there. <Term>Throughput</Term> is tokens or requests
         per second across everybody. It is what matters for offline work: generating synthetic data,
         cleaning datasets, classifying in bulk.
       </p>
       <p>
-        One more term, because the rest of the page leans on it. An <strong>SLO</strong> is a
+        One more term, because the rest of the page leans on it. An <Term>SLO</Term> is a
         service level objective: a promise about a number, such as "95% of requests see their first
         token within 300ms". It is the line you have decided not to cross.
       </p>
@@ -498,7 +499,7 @@ export default function Benchmarking() {
         <p>
           Raw throughput is easy to inflate: push the batch size up and the number goes up, while
           every user's ITL quietly becomes unacceptable. Goodput only counts tokens from requests
-          that met their SLOs, so it cannot be gamed that way. vLLM's <strong>auto-tune</strong>{' '}
+          that met their SLOs, so it cannot be gamed that way. vLLM's <Term>auto-tune</Term>{' '}
           script drives the <Code>serve</Code> benchmark to search for argument settings satisfying
           a target — "maximize throughput while keeping p99 E2E under 500 ms" — and returns a
           suggested config.

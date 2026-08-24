@@ -12,6 +12,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, DistChart, reqColor, reqInk, TokenStrip } from '../components/viz'
 
@@ -409,7 +410,7 @@ export default function ForwardPass() {
         PyTorch forward pass: Python asks the GPU to do one operation, then the next, then the next.
       </p>
       <p>
-        <strong>Captured mode</strong> replays a <strong>CUDA graph</strong> instead. At startup the
+        <strong>Captured mode</strong> replays a <Term>CUDA graph</Term> instead. At startup the
         engine records the entire sequence of GPU operations for a few common batch sizes, and saves
         it as one object that can be launched with a single instruction.
       </p>

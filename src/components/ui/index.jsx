@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
 import { bridgeFor, stageByNumber } from '../../content/roadmap'
+import { lookupTerm } from '../../content/glossary'
 
 /*
  * Shared chrome, in the Modernist language: square corners, 2px rules between
@@ -57,6 +58,51 @@ export function Callout({ kind = 'note', title, children }) {
         {children}
       </div>
     </div>
+  )
+}
+
+/**
+ * A bolded term that shows its glossary definition on hover.
+ *
+ * Bold in the prose does two jobs: introducing a term, and heading a run-in
+ * paragraph ("Prepare inputs — …"). Only the first kind is wrapped in <Term>, so
+ * the dotted underline is a reliable promise: underlined means there is a
+ * definition behind it. A phrase with no glossary entry falls back to a plain
+ * <strong> rather than a broken affordance, and `stages.test.jsx` fails on one,
+ * so the fallback should never actually be reached.
+ *
+ * CSS-only, on hover *and* focus, so it needs no state, works with the keyboard,
+ * and survives the render tests (which have no DOM and run no effects). The
+ * panel is flat with a 2px rule and no radius or shadow, like every other
+ * surface in the system.
+ */
+export function Term({ children }) {
+  const entry = lookupTerm(children)
+  if (!entry) return <strong>{children}</strong>
+
+  return (
+    // No `relative` here on purpose: the panel is positioned against the
+    // paragraph (see `.prose-stage p` in index.css), not against the word. A
+    // panel centred on the word cannot be kept on screen in CSS alone — a term
+    // opening a paragraph pushed it ~100px off the left edge — and a term
+    // introduction is exactly the thing that tends to open a paragraph.
+    <span className="group">
+      <strong
+        tabIndex={0}
+        aria-describedby={`def-${entry.slug}`}
+        className="cursor-help underline decoration-accent-300 decoration-dotted decoration-2 underline-offset-[3px] group-hover:decoration-accent group-focus-within:decoration-accent"
+      >
+        {children}
+      </strong>
+      <span
+        role="tooltip"
+        id={`def-${entry.slug}`}
+        className="pointer-events-none invisible absolute top-[calc(100%+8px)] right-0 left-0 z-30 border-2 border-edge bg-panel px-3.5 py-3 text-[13px] leading-[1.5] font-[400] text-ink-dim opacity-0 transition-opacity duration-100 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        <span className={`${MICRO} mb-1.5 block text-accent-700`}>{entry.term}</span>
+        {entry.def}
+      </span>
+    </span>
   )
 }
 

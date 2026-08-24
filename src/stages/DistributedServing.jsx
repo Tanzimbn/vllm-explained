@@ -12,6 +12,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, MeterBar } from '../components/viz'
 
@@ -209,7 +210,7 @@ export default function DistributedServing() {
         and add just enough coordination to send each request somewhere sensible.
       </p>
       <p>
-        Running several complete copies is <strong>data parallelism</strong>, or DP. It is different
+        Running several complete copies is <Term>data parallelism</Term>, or DP. It is different
         from the splitting in <StageRef n={11} />: there, one model was cut across GPUs because it
         did not fit. Here the model already fits, and we simply want more of it.
       </p>
@@ -220,7 +221,7 @@ export default function DistributedServing() {
         GPUs, two engine copies per machine.
       </p>
       <p>
-        One machine runs <strong>headless</strong> — engines only, no API server, nothing listening
+        One machine runs <Term>headless</Term> — engines only, no API server, nothing listening
         for HTTP. The other runs the same two engines <em>plus</em> the frontend that users actually
         talk to.
       </p>

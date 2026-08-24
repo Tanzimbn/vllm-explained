@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { createElement as h } from 'react'
 
 import { bridgeFor, chapters, stages, stagesOf } from '../content/roadmap'
-import { glossary, glossaryByTerm, slugify, termsOf } from '../content/glossary'
+import { glossary, glossaryByTerm, lookupTerm, slugify, termsOf } from '../content/glossary'
 import RoadmapMap from './RoadmapMap'
 import Glossary from './Glossary'
 
@@ -187,9 +187,41 @@ describe('blog figures resolve to downloaded files', () => {
  * counts once and a `className` never counts at all.
  */
 
+/**
+ * Remove <Term>'s hover panels. They live inside the paragraph they annotate but
+ * are not body prose — counting a glossary definition against a stage's sentence
+ * length would measure the glossary, not the page. Depth-counted because the
+ * panel contains a nested span for its label.
+ */
+function stripTooltips(html) {
+  let out = ''
+  let i = 0
+  while (i < html.length) {
+    const start = html.indexOf('<span role="tooltip"', i)
+    if (start === -1) return out + html.slice(i)
+    out += html.slice(i, start)
+    let depth = 0
+    let j = start
+    while (j < html.length) {
+      if (html.startsWith('<span', j)) depth++
+      else if (html.startsWith('</span>', j)) {
+        depth--
+        if (depth === 0) {
+          j += '</span>'.length
+          break
+        }
+      }
+      j++
+    }
+    i = j
+  }
+  return out
+}
+
 /** Visible text of the prose pane, one entry per paragraph or list item. */
 function proseBlocks(html) {
-  const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'))
+  const full = html.slice(html.indexOf('<article'), html.indexOf('</article>'))
+  const article = stripTooltips(full)
   return [...article.matchAll(/<(p|li)\b[^>]*>([\s\S]*?)<\/\1>/g)].map((m) =>
     m[2]
       .replace(/<[^>]*>/g, ' ')
@@ -459,5 +491,105 @@ describe('every simulator carries a Try this checklist', () => {
       })
     }
     expect(vague, 'every entry should name a setting or a figure').toEqual([])
+  })
+})
+
+describe('bold terms explain themselves on hover', () => {
+  /**
+   * The dotted underline is a promise: it means there is a definition behind the
+   * word. So every <Term> has to resolve, or the promise is broken silently —
+   * <Term> falls back to a plain <strong> rather than crashing, which is exactly
+   * the kind of quiet failure a test has to catch.
+   */
+  it('resolves every <Term> in the prose to a glossary entry', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const stagesDir = dirname(fileURLToPath(import.meta.url))
+
+    const unresolved = []
+    let count = 0
+    for (const f of readdirSync(stagesDir)) {
+      if (!f.endsWith('.jsx') || f.endsWith('.test.jsx')) continue
+      const src = readFileSync(join(stagesDir, f), 'utf8')
+      for (const m of src.matchAll(/<Term>([^<]+)<\/Term>/g)) {
+        count++
+        if (!lookupTerm(m[1])) unresolved.push(`${f}: "${m[1]}"`)
+      }
+    }
+    expect(count, 'the prose stopped using <Term> at all').toBeGreaterThan(30)
+    expect(unresolved, 'a dotted underline with nothing behind it').toEqual([])
+  })
+
+  it('renders the definition, and describes the term with it', () => {
+    const html = render(PAGES['prefill-vs-decode'])
+    const hbm = glossaryByTerm['HBM']
+
+    // The affordance, the panel, and the wiring between them.
+    expect(html).toContain('decoration-dotted')
+    expect(html).toContain(`aria-describedby="def-${hbm.slug}"`)
+    expect(html).toContain(`id="def-${hbm.slug}"`)
+    expect(html).toContain('role="tooltip"')
+    expect(html).toContain(hbm.def.slice(0, 40))
+  })
+
+  it('reaches the panel by keyboard as well as by pointer', () => {
+    const html = render(PAGES['prefill-vs-decode'])
+    // Focusable, and revealed by focus-within as well as hover — a hover-only
+    // definition is unreachable without a mouse.
+    expect(html).toContain('tabindex="0"')
+    expect(html).toContain('group-hover:visible')
+    expect(html).toContain('group-focus-within:visible')
+  })
+
+  it('leaves run-in headings as plain bold', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const stagesDir = dirname(fileURLToPath(import.meta.url))
+
+    // These head a paragraph rather than introducing a term. Wrapping them would
+    // make the underline mean nothing.
+    const headings = ['Prepare inputs', 'Update states', 'Sample', 'Main thread', 'init device']
+    for (const f of readdirSync(stagesDir)) {
+      if (!f.endsWith('.jsx') || f.endsWith('.test.jsx')) continue
+      const src = readFileSync(join(stagesDir, f), 'utf8')
+      headings.forEach((h) =>
+        expect(src, `${f} wrapped the run-in heading "${h}"`).not.toContain(`<Term>${h}</Term>`)
+      )
+    }
+  })
+
+  it('does not clip the prose pane, which would cut the panel off', async () => {
+    const { paneLayout } = await import('../components/layout/StageLayout')
+    expect(paneLayout(false).article).not.toContain('overflow-hidden')
+  })
+
+  /**
+   * The panel is positioned against the paragraph, not the word. A panel centred
+   * on the word cannot be kept on screen with CSS alone — measured in Chrome, a
+   * term opening a paragraph put its panel 97px off the left edge — so the
+   * containing block is `.prose-stage p` and the panel spans the column with
+   * left-0 right-0. Two halves, in two files, and either one alone is broken.
+   */
+  it('anchors the panel to the paragraph so it cannot run off screen', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const root = join(dirname(fileURLToPath(import.meta.url)), '..')
+
+    const css = readFileSync(join(root, 'index.css'), 'utf8')
+    expect(css, 'the paragraph must be the containing block').toMatch(
+      /\.prose-stage p,\s*\.prose-stage li \{\s*position: relative;/
+    )
+
+    const ui = readFileSync(join(root, 'components', 'ui', 'index.jsx'), 'utf8')
+    const term = ui.slice(ui.indexOf('export function Term('), ui.indexOf('export function CodeBlock('))
+    // The wrapper must NOT be relative, or it steals the containing block back.
+    expect(term).toContain('<span className="group">')
+    expect(term).not.toContain('group relative')
+    // Spanning the column, rather than centred on the word.
+    expect(term).toContain('right-0 left-0')
+    expect(term).not.toContain('-translate-x-1/2')
   })
 })

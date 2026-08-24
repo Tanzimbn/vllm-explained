@@ -34,6 +34,21 @@ No linter or formatter is configured; match the surrounding style.
 
 ### One source of truth for structure
 
+A bolded term wrapped in `<Term>` shows its glossary definition on hover and on focus. Three things
+make that work, and each is pinned by `stages.test.jsx`:
+
+- **Only term introductions are wrapped.** Bold also heads run-in paragraphs ("Prepare inputs — …").
+  Wrapping those would make the dotted underline meaningless, so the wrap list is explicit.
+- **The panel is anchored to the paragraph, not the word.** `.prose-stage p, .prose-stage li` are
+  `position: relative` and the panel spans the column with `left-0 right-0`. A panel centred on the
+  word cannot be kept on screen in CSS alone — measured in Chrome, a term opening a paragraph put
+  its panel 97px past the left edge. For the same reason the article carries no `overflow-hidden`.
+- **Hover is not the only path.** Tailwind gates `hover:` behind `@media (hover: hover)`, so on a
+  touch device hover never fires — and in plain headless Chrome it never fires either, which makes
+  the feature look broken when it is not. `group-focus-within` covers keyboard and tap. To verify
+  hover in headless, launch Chrome with
+  `--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4`.
+
 `src/content/glossary.js` defines every term the site uses — all 67 concept chips plus the jargon
 the prose leans on — keyed by the exact chip string, with the stage that introduces it. The chips in
 `StageHeader` link to `/glossary#<slug>`, and `stages.test.jsx` fails if a stage names a concept the

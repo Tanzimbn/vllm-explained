@@ -1,7 +1,16 @@
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import engine, { ENGINE_EDGES, ENGINE_GROUPS, ENGINE_NODES, PHASES } from '../sim/engine'
-import { BlogFigure, Callout, Card, Code, CodeBlock, StageRef, Takeaways } from '../components/ui'
+import {
+  BlogFigure,
+  Callout,
+  Card,
+  Code,
+  CodeBlock,
+  StageRef,
+  Takeaways,
+  Term,
+} from '../components/ui'
 import { NodeGraph } from '../components/viz'
 
 function EngineViz({ sim }) {
@@ -70,20 +79,20 @@ export default function EngineAnatomy() {
       </p>
       <ul>
         <li>
-          <strong>vLLM config</strong> — one bag holding every setting: which model, how big the
+          <Term>vLLM config</Term> — one bag holding every setting: which model, how big the
           cache is, how many GPUs to spread across.
         </li>
         <li>
-          <strong>Processor</strong> — the front door. It checks your input, turns the text into
+          <Term>Processor</Term> — the front door. It checks your input, turns the text into
           token ids, and packs the result into an <Code>EngineCoreRequest</Code>.
         </li>
         <li>
-          <strong>Engine core client</strong> — the middleman. When any code wants the engine to do
+          <Term>Engine core client</Term> — the middleman. When any code wants the engine to do
           work, it calls the client, and the client passes the job to the <Code>EngineCore</Code>{' '}
           that actually does it.
         </li>
         <li>
-          <strong>Output processor</strong> — the back door. It turns the engine's raw{' '}
+          <Term>Output processor</Term> — the back door. It turns the engine's raw{' '}
           <Code>EngineCoreOutputs</Code> into the <Code>RequestOutput</Code> you actually read.
         </li>
       </ul>
@@ -106,17 +115,17 @@ export default function EngineAnatomy() {
       </p>
       <ul>
         <li>
-          <strong>Model executor</strong> — runs the forward passes. For now that is a{' '}
+          <Term>Model executor</Term> — runs the forward passes. For now that is a{' '}
           <Code>UniProcExecutor</Code>: one worker, one GPU.
         </li>
         <li>
-          <strong>Structured output manager</strong> — keeps the output to a shape you asked for,
+          <Term>Structured output manager</Term> — keeps the output to a shape you asked for,
           like valid JSON (<StageRef n={8} />).
         </li>
         <li>
-          <strong>Scheduler</strong> — decides who runs next. It holds the policy (<Code>FCFS</Code>{' '}
+          <Term>Scheduler</Term> — decides who runs next. It holds the policy (<Code>FCFS</Code>{' '}
           or <Code>priority</Code>), a <Code>waiting</Code> queue and a <Code>running</Code> queue,
-          and the <strong>KV cache manager</strong> — the heart of paged attention.
+          and the <Term>KV cache manager</Term> — the heart of paged attention.
         </li>
       </ul>
 

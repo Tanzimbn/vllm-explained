@@ -12,6 +12,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, LineChart } from '../components/viz'
 
@@ -266,23 +267,23 @@ export default function MultiProcExecutor() {
 
       <h2>Two ways to split a model</h2>
       <p>
-        <strong>Tensor parallelism</strong>, or TP, cuts the individual weight matrices up. Every
+        <Term>Tensor parallelism</Term>, or TP, cuts the individual weight matrices up. Every
         GPU holds a slice of every layer, and they work on each layer together.
       </p>
       <p>
         Working together has a price. Each GPU computes a partial answer from its own slice, so
         after every sharded block they all have to swap partials and add them up. That exchange is
-        an <strong>all-reduce</strong>, and there is one per block, every layer, every step. It is a
+        an <Term>all-reduce</Term>, and there is one per block, every layer, every step. It is a
         lot of traffic, which is why TP normally stays <em>inside</em> one machine where the links
         between GPUs are fastest.
       </p>
       <p>
-        <strong>Pipeline parallelism</strong>, or PP, cuts by layer instead. GPU 0 holds the first
+        <Term>Pipeline parallelism</Term>, or PP, cuts by layer instead. GPU 0 holds the first
         few layers, GPU 1 the next few, and so on, so data is handed forward once per boundary.
       </p>
       <p>
         That is far less traffic, which makes PP the way to span machines. The cost is a{' '}
-        <strong>bubble</strong>. While GPU 0 works on the first layers, the GPUs holding later
+        <Term>bubble</Term>. While GPU 0 works on the first layers, the GPUs holding later
         layers have nothing to do yet, and they idle again at the end of the batch.
       </p>
 
@@ -371,7 +372,7 @@ export default function MultiProcExecutor() {
           <StageRef n={2} /> — now with TP-partitioned weights.
         </li>
         <li>
-          Each worker works out whether it is the <strong>driver</strong> — rank 0 in the TP
+          Each worker works out whether it is the <Term>driver</Term> — rank 0 in the TP
           group — or a regular worker. It then sets up two queues: <Code>rpc_broadcast_mq</Code>,
           shared with the parent, for receiving work; and its own <Code>worker_response_mq</Code>{' '}
           for replies.

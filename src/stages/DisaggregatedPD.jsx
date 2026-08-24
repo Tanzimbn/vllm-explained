@@ -11,6 +11,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, reqColor } from '../components/viz'
 
@@ -298,7 +299,7 @@ export default function DisaggregatedPD() {
 
       <h2>Connectors</h2>
       <p>
-        A <strong>connector</strong> is vLLM's abstraction for moving KV between instances. The
+        A <Term>connector</Term> is vLLM's abstraction for moving KV between instances. The
         example below uses <Code>SharedStorageConnector</Code>, a debugging implementation whose
         "external server" is just the local filesystem — which makes the mechanics easy to follow.
         Its lifecycle has five points.

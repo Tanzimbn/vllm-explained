@@ -10,6 +10,7 @@ import {
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { BlockGrid, C, MeterBar, reqColor } from '../components/viz'
 
@@ -158,7 +159,7 @@ export default function PagedAttention() {
     >
       <p>
         A sequence being decoded needs every key and value it has computed so far. Holding on to
-        them is the <strong>KV cache</strong>, and it is the resource that decides how many requests
+        them is the <Term>KV cache</Term>, and it is the resource that decides how many requests
         a GPU can serve at once. Weights are fixed in size; the KV cache is not, and it grows with
         every token.
       </p>
@@ -182,7 +183,7 @@ export default function PagedAttention() {
         The second kind is nastier. Because each run has to be <em>adjacent</em>, the free space
         left between sequences ends up in gaps too small to fit anybody, even when the total free
         space is plentiful. Memory that exists and cannot be used is called{' '}
-        <strong>external fragmentation</strong>.
+        <Term>external fragmentation</Term>.
       </p>
 
       <Callout kind="intuition" title="Shelves against an index">
@@ -204,7 +205,7 @@ export default function PagedAttention() {
         stop insisting that a sequence's blocks sit next to each other.
       </p>
       <p>
-        Each sequence gets a <strong>block table</strong>: a little list saying which physical block
+        Each sequence gets a <Term>block table</Term>: a little list saying which physical block
         holds its first 16 tokens, which holds the next 16, and so on. The blocks can be scattered
         anywhere in the pool. <Code>#3 → #17 → #4</Code> is a perfectly ordinary block table.
       </p>
@@ -216,7 +217,7 @@ export default function PagedAttention() {
       <p>
         One small waste is left. The last block of a sequence is usually only part full, which
         strands up to <Code>block_size - 1</Code> token slots. That is called{' '}
-        <strong>internal fragmentation</strong>, and unlike the other two it is bounded: at most 15
+        <Term>internal fragmentation</Term>, and unlike the other two it is bounded: at most 15
         slots per sequence, no matter how the caller sets its limits.
       </p>
 
@@ -263,7 +264,7 @@ export default function PagedAttention() {
         <li>
           <strong>Check the pool can cover it.</strong> If it cannot, give up here. Depending on
           whether this is a prefill or a decode, the engine may instead take blocks away from a
-          lower-priority request — <strong>preemption</strong>, which is <StageRef n={4} />.
+          lower-priority request — <Term>preemption</Term>, which is <StageRef n={4} />.
         </li>
         <li>
           <strong>Hand them over.</strong> Take the first <Code>n</Code> blocks off{' '}
