@@ -344,6 +344,18 @@ export default function ForwardPass() {
         caption="Continuous batching and paged attention in one forward pass"
       />
 
+      <Callout kind="intuition" title="A rectangle against a ribbon">
+        <p>
+          Padding sequences into a rectangle is like filing letters of different lengths by
+          stretching every one to the length of the longest. It works, and the wasted paper is the
+          padding — but worse, the shape is now fixed. Swapping a letter means rebuilding the block.
+        </p>
+        <p>
+          vLLM glues the letters into one long ribbon and keeps a note of where each begins. No
+          shape to preserve, so the contents can change every single step for free.
+        </p>
+      </Callout>
+
       <h2>Where each token's KV actually goes</h2>
       <p>
         Every one of those 17 rows is about to produce a key and a value. Each has to be written

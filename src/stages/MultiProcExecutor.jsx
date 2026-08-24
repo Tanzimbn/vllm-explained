@@ -281,6 +281,19 @@ export default function MultiProcExecutor() {
         layers have nothing to do yet, and they idle again at the end of the batch.
       </p>
 
+      <Callout kind="intuition" title="Everyone on every page, or an assembly line">
+        <p>
+          Tensor parallelism is eight people translating one page, each taking a column. Fast. But
+          after every page they must compare notes to agree. That is the all-reduce, and it is why
+          they sit in one room.
+        </p>
+        <p>
+          Pipeline parallelism is an assembly line. Person one does the first ten pages, then hands
+          the manuscript on. Almost no conferring, so they can be in different buildings. But nobody
+          further down the line has anything to do until the work reaches them.
+        </p>
+      </Callout>
+
       <Callout kind="note" title="The usual ordering">
         <p>
           Links inside a machine are much faster than links between machines. So the usual recipe is

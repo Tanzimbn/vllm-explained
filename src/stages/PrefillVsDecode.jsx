@@ -163,6 +163,17 @@ export default function PrefillVsDecode() {
         is a terrible deal.
       </p>
 
+      <Callout kind="intuition" title="Why decode is such a bad deal">
+        <p>
+          Imagine driving a lorry across town to collect a single apple. The apple weighs nothing;
+          the trip costs the same whether you bring back one apple or a thousand.
+        </p>
+        <p>
+          That trip is streaming the weights out of HBM, and one decode step brings back one token.
+          Batching is simply the decision to fill the lorry.
+        </p>
+      </Callout>
+
       <Callout kind="key">
         <p>
           The tension in one line. Prefill wants many tokens at once, to keep the arithmetic units

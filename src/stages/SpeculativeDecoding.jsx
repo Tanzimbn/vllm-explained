@@ -236,6 +236,19 @@ export default function SpeculativeDecoding() {
         may as well check several candidate tokens in the same trip.
       </p>
 
+      <Callout kind="intuition" title="A junior drafts, a senior signs off">
+        <p>
+          A junior writes a paragraph quickly and cheaply. A senior reads it in one pass and marks
+          where they would have written something else, stopping at the first real disagreement.
+          Everything above that line stands.
+        </p>
+        <p>
+          The output is whatever the senior would have written on their own, because the senior
+          checked every word of it. A bad junior costs you rewrites — never the quality of what
+          finally ships.
+        </p>
+      </Callout>
+
       <h2>Draft, verify, and be careful about it</h2>
       <p>
         A small, cheap <strong>draft model</strong> guesses the next <Code>k</Code> tokens. The big{' '}

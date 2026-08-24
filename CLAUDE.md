@@ -180,6 +180,11 @@ That is the whole audience: someone competent who has never run a server. Stage 
   short-form `<StageRef>` (which renders "stage 06"). Rephrase, or use `<StageRef n={6} title />`,
   which renders "Chunked prefill (stage 06)". It reads better, and the readability check treats a
   lowercase start as a continuation of the previous sentence.
+- **An analogy goes before the mechanism, and only where one is needed.** `<Callout kind="intuition">`
+  is for a way in — a bandwidth-bound step, paging, an unpadded batch, a chained hash,
+  draft-and-verify, TP against PP. Six stages have one and a test pins that list; a mandatory
+  analogy on a stage that explains itself is padding. It is the one callout kind distinguished by a
+  fill rather than a shape, so its label always names itself.
 - **Bind paragraphs to the simulator with specific actions.** "Set `block_size` to 4 and step six
   times; watch row 3 jump" beats "watch the panel on the right".
 - **Derive a number in the prose before it appears in a `<Takeaways>`.** Takeaways recap; they do

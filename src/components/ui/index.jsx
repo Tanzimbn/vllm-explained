@@ -28,20 +28,31 @@ const CALLOUT_STYLES = {
   note: { label: 'Note' },
   key: { label: 'Key idea' },
   gotcha: { label: 'Gotcha' },
+  intuition: { label: 'Intuition' },
 }
 
 /**
  * `key` gets the accent bar — the system's way of marking the one idea a section
- * turns on. `note` and `gotcha` get the 2px box.
+ * turns on. `note` and `gotcha` get the 2px box. `intuition` gets the box plus a
+ * flat accent-100 fill, because it is a different *kind* of paragraph rather
+ * than a more important one: an analogy, offered before the mechanism, that the
+ * reader is free to skip. Flat fill, not tinted glass — the system's rule holds.
+ *
+ * The label carries the distinction too, so the kind is never hue alone.
  */
 export function Callout({ kind = 'note', title, children }) {
   const s = CALLOUT_STYLES[kind] ?? CALLOUT_STYLES.note
   const bar = kind === 'key'
+  const box = kind === 'intuition' ? 'border-2 border-edge bg-accent-100 p-5' : 'border-2 border-edge p-5'
   return (
-    <div
-      className={bar ? 'my-7 border-l-4 border-accent pl-[18px]' : 'my-7 border-2 border-edge p-5'}
-    >
-      <div className={`${MICRO} mb-2 text-accent-700`}>{title ?? s.label}</div>
+    <div className={bar ? 'my-7 border-l-4 border-accent pl-[18px]' : `my-7 ${box}`}>
+      {/* `intuition` is the one kind distinguished by a fill rather than by
+          shape, so its label always names itself even when a title is given —
+          otherwise the kind would be carried by hue alone, which the design
+          system forbids. */}
+      <div className={`${MICRO} mb-2 text-accent-700`}>
+        {kind === 'intuition' && title ? `${s.label} · ${title}` : (title ?? s.label)}
+      </div>
       <div className="text-[15px] leading-[1.6] text-ink-dim [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
         {children}
       </div>

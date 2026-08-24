@@ -231,6 +231,18 @@ export default function PrefixCaching() {
         </p>
       </Callout>
 
+      <Callout kind="intuition" title="Why the hash chains">
+        <p>
+          Read each block's hash as a page number that also encodes every page before it. "Chapter 3
+          of <em>this</em> book" is not "chapter 3". A match therefore means the whole run from the
+          beginning agrees.
+        </p>
+        <p>
+          Without the chain you could reuse a block whose earlier context was different. That is the
+          right arithmetic from the wrong conversation.
+        </p>
+      </Callout>
+
       <h2>The lookup</h2>
       <p>
         While scheduling a request, <Code>kv_cache_manager.get_computed_blocks</Code> hashes the

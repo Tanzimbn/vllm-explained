@@ -368,3 +368,51 @@ describe('the glossary covers what the site says', () => {
     )
   })
 })
+
+describe('analogies are offered where they earn their place', () => {
+  /**
+   * Not one per stage. Six stages introduce something a reader has no existing
+   * hook for — a bandwidth-bound step, paging, an unpadded batch, a chained
+   * hash, draft-and-verify, TP against PP — and those get an analogy before the
+   * mechanism. The rest explain themselves and are left alone; a mandatory
+   * analogy on a stage that does not need one is padding.
+   */
+  const ANALOGY_STAGES = [
+    'prefill-vs-decode',
+    'paged-attention',
+    'forward-pass',
+    'prefix-caching',
+    'speculative-decoding',
+    'multiproc-executor',
+  ]
+
+  it('puts an intuition callout on exactly the stages that need one', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const stagesDir = dirname(fileURLToPath(import.meta.url))
+
+    const withOne = []
+    for (const f of readdirSync(stagesDir)) {
+      if (!f.endsWith('.jsx') || f.endsWith('.test.jsx')) continue
+      const src = readFileSync(join(stagesDir, f), 'utf8')
+      const count = (src.match(/kind="intuition"/g) ?? []).length
+      if (count > 0) withOne.push([f, count])
+    }
+    // One each, never two — an analogy is a way in, not a running commentary.
+    withOne.forEach(([f, n]) => expect(n, `${f} has ${n} intuition callouts`).toBe(1))
+
+    const slugs = withOne
+      .map(([f]) => Object.entries(PAGES).find(([, C]) => C.name === f.replace('.jsx', ''))?.[0])
+      .filter(Boolean)
+    expect(slugs.sort()).toEqual([...ANALOGY_STAGES].sort())
+  })
+
+  it('renders the analogy above the mechanism it explains', () => {
+    // The point of an analogy is to arrive first. Each of these sits before the
+    // section that does the real work.
+    const html = render(PAGES['speculative-decoding'])
+    expect(html.indexOf('Intuition')).toBeLessThan(html.indexOf('This is exact, not approximate'))
+    expect(html.indexOf('Intuition')).toBeGreaterThan(-1)
+  })
+})

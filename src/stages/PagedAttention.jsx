@@ -180,6 +180,18 @@ export default function PagedAttention() {
         <strong>external fragmentation</strong>.
       </p>
 
+      <Callout kind="intuition" title="Shelves against an index">
+        <p>
+          A contiguous allocator is a library that insists every copy of a book sit in one unbroken
+          run of shelf. Return a short book and you leave a gap too narrow for anything else, while
+          a long book cannot be shelved at all despite plenty of free space elsewhere.
+        </p>
+        <p>
+          Paging keeps a card index instead. The pages go wherever there is room, and the index says
+          in what order to read them. Nothing needs to be next to anything.
+        </p>
+      </Callout>
+
       <h2>Paging it instead</h2>
       <p>
         PagedAttention borrows the trick operating systems use for RAM. Chop the KV cache into
