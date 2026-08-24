@@ -94,6 +94,27 @@ describe('batching — static vs continuous', () => {
     expect(c.tokensOut).toBe(s.tokensOut)
   })
 
+  /**
+   * Stage 01 walks the reader through the panel and quotes what they will see.
+   * Those figures are the sim's output at its default knobs, so they are pinned
+   * here: change the sim and this fails before the page can quietly start lying.
+   */
+  it('produces exactly the run the stage 01 prose describes', () => {
+    const opts = { numRequests: 8, maxBatch: 4, spread: 9 }
+    const s = runSim(batching, { ...opts, mode: 'static' }, 400).state
+    const c = runSim(batching, { ...opts, mode: 'continuous' }, 400).state
+
+    expect([s.tick, s.wastedSlotSteps, Math.round(utilization(s))]).toEqual([21, 23, 73])
+    expect([c.tick, c.wastedSlotSteps]).toEqual([17, 7])
+
+    // With no spread in output lengths there is nothing for either mode to waste.
+    const flat = { ...opts, spread: 0 }
+    for (const mode of ['static', 'continuous']) {
+      const f = runSim(batching, { ...flat, mode }, 400).state
+      expect([f.tick, f.wastedSlotSteps, Math.round(utilization(f))]).toEqual([4, 0, 100])
+    }
+  })
+
   it('no request is ever admitted twice', () => {
     const { trace } = runSim(batching, { mode: 'continuous' }, 400)
     trace.forEach((s) => {

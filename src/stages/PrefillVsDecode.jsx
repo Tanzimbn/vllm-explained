@@ -121,78 +121,123 @@ export default function PrefillVsDecode() {
       }
     >
       <p>
-        An inference engine spends its life doing two jobs that want opposite things from the
-        hardware. Getting them to share one GPU efficiently is the problem that shapes every design
-        decision in the rest of this roadmap.
+        Send a prompt to an LLM and the engine does two quite different jobs to answer it. The
+        first job runs once. The second runs again for every word it writes back. They want
+        opposite things from the GPU, and they have to share one.
+      </p>
+      <p>
+        That tension shapes every design decision in the rest of this roadmap. It is worth getting
+        straight before anything else.
       </p>
 
-      <h2>The two workloads</h2>
+      <h2>The two jobs</h2>
       <p>
-        A <strong>prefill</strong> is a forward pass over every token of the prompt at once. There
-        is a lot of arithmetic to do and it is all independent, so the GPU's compute units are the
-        bottleneck: prefill is <strong>compute-bound</strong>. At the end you sample exactly one
-        token, from the distribution at the final position.
+        <strong>Prefill</strong> is the first job. The model reads your whole prompt and works out
+        one thing: the first token of the reply. Every token of the prompt is handled at the same
+        time, because they are all already known.
       </p>
       <p>
-        A <strong>decode</strong> is a forward pass over a single token — the one just generated.
-        Every earlier key/value vector is already sitting in the KV cache, so there is almost no
-        arithmetic to do. But you still have to stream every weight in the model from HBM into the
-        chip to compute that one token. Decode is <strong>memory-bandwidth-bound</strong>, and it is
-        wildly inefficient per token: you move gigabytes to produce a handful of bytes.
+        That is a lot of arithmetic, and none of it waits on anything else. The limit is simply how
+        fast the GPU can multiply, so we call prefill <strong>compute-bound</strong>. Give the chip
+        more of this work and it will keep up.
+      </p>
+      <p>
+        <strong>Decode</strong> is the second job. It runs once for every token after the first,
+        and each run reads exactly one token — the one just produced — to predict the next.
+      </p>
+      <p>
+        One token is barely any arithmetic. The model kept its working from all the earlier tokens
+        in a scratchpad called the <strong>KV cache</strong>, so nothing gets recomputed. What that
+        cache holds, and why storing it is hard, is the subject of <StageRef n={3} />.
+      </p>
+      <p>
+        But there is a catch, and it is the reason this whole field exists. To predict that single
+        token, the GPU still has to drag every weight in the model out of memory and through the
+        arithmetic units. That memory is <strong>HBM</strong>, the bank of high-bandwidth chips
+        sitting beside the GPU. On a large model it means moving tens of gigabytes to produce a
+        couple of bytes of output.
+      </p>
+      <p>
+        So the arithmetic units now sit mostly idle, waiting to be fed. The limit has moved to
+        memory, which is why decode is called <strong>memory-bandwidth-bound</strong>. Per token it
+        is a terrible deal.
       </p>
 
       <Callout kind="key">
         <p>
-          This asymmetry is the engine's central tension. Prefill wants big batches of tokens to
-          saturate the compute units. Decode wants many sequences in flight so that the one
-          expensive weight-streaming pass gets amortized across as many tokens as possible. And both
-          need to happen on the same GPU, interleaved, without either starving the other.
+          The tension in one line. Prefill wants many tokens at once, to keep the arithmetic units
+          busy. Decode wants many <em>sequences</em> at once, so that one expensive trip through
+          the weights produces many tokens instead of one. Both have to happen on the same GPU,
+          taking turns, without either being starved.
         </p>
       </Callout>
 
       <p>
-        vLLM's V1 scheduler can mix prefills and decodes in the <em>same</em> step. The V0 engine
-        could only do one or the other per step, which left performance on the table — you'll see
-        exactly how the mixing works in <StageRef n={5} />.
+        vLLM's V1 scheduler can put prefills and decodes in the <em>same</em> step. The older V0
+        engine had to pick one or the other, which left capacity unused. <StageRef n={5} /> shows
+        how the mixing works.
       </p>
 
-      <h2>Why batching naively goes wrong</h2>
+      <h2>Why the obvious fix isn't enough</h2>
       <p>
-        Since decode is bandwidth-bound, batching is the obvious fix: run <Code>B</Code> sequences
-        together and one weight-streaming pass yields <Code>B</Code> tokens instead of one. The
-        naive way to do that is <strong>static batching</strong> — collect <Code>B</Code> requests,
-        run them together, return all the results, collect the next <Code>B</Code>.
+        Decode is held up by memory traffic, so the fix suggests itself: run several sequences
+        together. One trip through the weights then yields <Code>B</Code> tokens instead of one,
+        and the expensive part is paid once rather than <Code>B</Code> times.
       </p>
       <p>
-        The problem is that requests don't finish together. One asks for 3 tokens, another for 400.
-        In a static batch every slot is held hostage by the slowest member: finished sequences sit
-        in the batch doing nothing while new requests queue up outside. Run the panel on the right
-        in <Code>static</Code> mode and watch the slot utilization number — then flip it to{' '}
-        <Code>continuous</Code>.
+        The simple way to do that is <strong>static batching</strong>. Collect <Code>B</Code>{' '}
+        requests, run them together until every one of them has finished, return the results, then
+        collect the next <Code>B</Code>.
+      </p>
+      <p>
+        It fails for a dull reason: requests do not finish together. One wants 3 tokens, another
+        wants 400. The batch cannot be broken up part-way, so the short request's slot stays
+        occupied and idle until the long one is done. Meanwhile new requests wait outside for a
+        slot that is doing nothing.
+      </p>
+
+      <h2>Watch it happen</h2>
+      <p>
+        The panel on the right puts eight requests through four batch slots. Leave{' '}
+        <Code>Batching</Code> on <Code>static</Code> and press <Code>▶ Run</Code>. It takes 21
+        steps, wastes 23 slot-steps and ends at 73% slot utilization.
+      </p>
+      <p>
+        Now switch <Code>Batching</Code> to <Code>continuous</Code> and run it again. The same eight
+        requests take 17 steps and waste 7 slot-steps.
+      </p>
+      <p>
+        Then drag <Code>Output-length spread</Code> down to 0, so every request asks for the same
+        number of tokens, and run each mode once more. Both finish in 4 steps and waste nothing at
+        all. That is where the waste actually comes from: not from batching, but from batching
+        things that finish at different times.
       </p>
 
       <h2>Continuous batching</h2>
       <p>
-        <strong>Continuous batching</strong> (introduced by Orca) retires and admits requests at{' '}
-        <em>step</em> granularity instead of batch granularity. The moment a sequence hits its stop
-        condition its slot is released, and after every step the scheduler reconsiders the whole
-        population — old requests and newly arrived ones together.
+        <strong>Continuous batching</strong> (from a system called Orca) changes when the engine is
+        allowed to reshuffle. Rather than admitting and retiring a whole batch at a time, it does
+        both after every single step.
       </p>
       <p>
-        Rebuilding the batch that often sounds like it should be expensive. Here it is close to
-        free, and the reason is worth stating now even though the mechanism comes later: a vLLM
-        batch is not a fixed rectangle of sequences that has to be held together from one step to
-        the next. There is no shape to preserve, so nothing stops the membership changing. How the
-        batch gets built that way is the subject of <StageRef n={5} />.
+        A sequence that hits its stop condition gives up its slot straight away. Before the next
+        step, the scheduler looks at everything in the system — the requests still running and any
+        that have just arrived — and decides again who goes.
+      </p>
+      <p>
+        Reshuffling that often sounds expensive. Here it is nearly free, and the reason is worth
+        knowing early. A vLLM batch is not a fixed block of sequences that has to be held together
+        from one step to the next. There is no shape to preserve, so changing who is in it costs
+        nothing. <StageRef n={5} /> shows what it is instead.
       </p>
 
       <Callout kind="gotcha" title="Offline vs online">
         <p>
-          The synchronous, offline engine you get from <Code>LLM(...)</Code> processes only the
-          prompts you handed it — there is no mechanism to inject new requests mid-run. Continuous
-          batching becomes visible with the <em>asynchronous</em> engine, where requests arrive over
-          the network at arbitrary times. But the underlying capability is in the engine core either
-          way, because of how the batch is built.
+          The offline engine you get from <Code>LLM(...)</Code> only ever sees the prompts you hand
+          it up front. Nothing can arrive mid-run, so there is little for continuous batching to
+          react to. It earns its keep in the <em>asynchronous</em> engine, where requests turn up
+          over the network at unpredictable times. The ability is built into the engine core
+          either way.
         </p>
       </Callout>
 
@@ -217,8 +262,8 @@ if __name__ == "__main__":
 
       <Takeaways
         items={[
-          'Prefill is compute-bound and processes the whole prompt at once; decode is memory-bandwidth-bound and produces one token per pass. Nearly every optimization in this roadmap exists because these two profiles differ.',
-          'Static batching wastes capacity in proportion to how much output lengths vary, because the batch is only as free as its slowest member.',
+          'Prefill reads the whole prompt at once and is limited by GPU arithmetic. Decode produces one token per pass and is limited by memory bandwidth. Nearly every optimization in this roadmap exists because those two limits are different.',
+          'Static batching wastes capacity in proportion to how much output lengths vary, because a slot is only free again when the slowest member of its batch is done.',
           'Continuous batching admits and retires requests every step rather than every batch. It is possible because a vLLM batch has no fixed shape to hold together between steps — the forward-pass stage shows what it is instead.',
         ]}
       />

@@ -231,7 +231,7 @@ function readability(html) {
  * to-do list in numeric form.
  */
 const READABILITY_BUDGET = {
-  'prefill-vs-decode': { avg: 19.0, max: 41 },
+  'prefill-vs-decode': { avg: 15.0, max: 29 },
   'engine-anatomy': { avg: 16.0, max: 30 },
   'paged-attention': { avg: 18.5, max: 43 },
   scheduler: { avg: 17.0, max: 47 },
