@@ -8,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
@@ -257,7 +258,7 @@ vllm serve <model-name> \\
         <li>initialize the DP group (e.g. NCCL backend);</li>
         <li>
           initialize the <Code>EngineCore</Code> with a <Code>MultiProcExecutor</Code> — the TP=4
-          machinery from stage 11;
+          machinery from <StageRef n={11} />;
         </li>
         <li>
           start an <strong>input</strong> daemon thread and an <strong>output</strong> daemon
@@ -278,7 +279,8 @@ vllm serve <model-name> \\
         <p>
           <strong>Main thread</strong> — wakes on <Code>input_queue.get(...)</Code>, feeds the
           request to the engine, and calls <Code>engine_core.step()</Code> repeatedly — the same
-          schedule/forward/postprocess loop from stage 02, now with <Code>MultiProcExecutor</Code>{' '}
+          schedule/forward/postprocess loop from <StageRef n={2} />, now with{' '}
+          <Code>MultiProcExecutor</Code>{' '}
           underneath — pushing results to <Code>output_queue</Code>.
         </p>
         <p>

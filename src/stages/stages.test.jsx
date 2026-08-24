@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { createElement as h } from 'react'
 
-import { stages } from '../content/roadmap'
+import { bridgeFor, chapters, stages, stagesOf } from '../content/roadmap'
 import RoadmapMap from './RoadmapMap'
 
 import PrefillVsDecode from './PrefillVsDecode'
@@ -70,6 +70,19 @@ describe('routing and content wiring', () => {
 
   it('stage numbers are contiguous from 1', () => {
     stages.forEach((s, i) => expect(s.n).toBe(i + 1))
+  })
+
+  it('every stage builds only on stages that came before it', () => {
+    const byNumber = new Map(stages.map((s) => [s.n, s]))
+    stages.forEach((s) => {
+      expect(Array.isArray(s.prereq), `${s.slug} has no prereq list`).toBe(true)
+      s.prereq.forEach((n) => {
+        expect(byNumber.has(n), `${s.slug} names a stage ${n} that does not exist`).toBe(true)
+        expect(n, `${s.slug} cannot build on a later stage`).toBeLessThan(s.n)
+      })
+    })
+    // Stage 01 is the entry point and depends on nothing.
+    expect(stages[0].prereq).toEqual([])
   })
 
   it('every stage names its chapter, concepts, and simulators', () => {
@@ -160,5 +173,143 @@ describe('blog figures resolve to downloaded files', () => {
     }
     expect(referenced.size).toBeGreaterThan(10)
     referenced.forEach((img) => expect(onDisk, `missing ${img}`).toContain(img))
+  })
+})
+
+/**
+ * The prose is the other half of the teaching, so it gets the same treatment as
+ * the sims: the claims about how it reads are asserted, not trusted.
+ *
+ * Everything here measures the *rendered* article — what a reader actually sees
+ * — rather than the JSX source, so a sentence split across three source lines
+ * counts once and a `className` never counts at all.
+ */
+
+/** Visible text of the prose pane, one entry per paragraph or list item. */
+function proseBlocks(html) {
+  const article = html.slice(html.indexOf('<article'), html.indexOf('</article>'))
+  return [...article.matchAll(/<(p|li)\b[^>]*>([\s\S]*?)<\/\1>/g)].map((m) =>
+    m[2]
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&#x27;/g, "'")
+      .replace(/&quot;/g, '"')
+      .replace(/&amp;/g, '&')
+      .replace(/&gt;/g, '>')
+      .replace(/&lt;/g, '<')
+      .replace(/\s+/g, ' ')
+      .trim()
+  )
+}
+
+/**
+ * Sentences never run across a block boundary: a list of four items ending in
+ * semicolons is four sentences, not one 90-word monster.
+ */
+function sentences(blocks) {
+  return blocks
+    .flatMap((b) => b.split(/(?<=[.!?])\s+(?=[A-Z(“"'`])/))
+    .map((x) => x.trim())
+    .filter((x) => x.split(/\s+/).length > 3)
+}
+
+function readability(html) {
+  const all = sentences(proseBlocks(html))
+  const lengths = all.map((s) => s.split(/\s+/).length)
+  return {
+    count: all.length,
+    avg: lengths.reduce((a, b) => a + b, 0) / (lengths.length || 1),
+    longest: all[lengths.indexOf(Math.max(...lengths))] ?? '',
+    max: Math.max(0, ...lengths),
+  }
+}
+
+/**
+ * A ratchet, not a target. These are the numbers each stage reads at today; the
+ * rule is that a change may lower them and may never raise them. The bar a
+ * rewritten stage aims for is the one `engine-anatomy` already meets — an
+ * average under 18 words and no sentence over 35 — so the remaining rows are a
+ * to-do list in numeric form.
+ */
+const READABILITY_BUDGET = {
+  'prefill-vs-decode': { avg: 19.0, max: 41 },
+  'engine-anatomy': { avg: 16.0, max: 30 },
+  'paged-attention': { avg: 18.5, max: 43 },
+  scheduler: { avg: 17.0, max: 47 },
+  'forward-pass': { avg: 17.0, max: 35 },
+  'chunked-prefill': { avg: 18.0, max: 33 },
+  'prefix-caching': { avg: 20.5, max: 40 },
+  'guided-decoding': { avg: 18.0, max: 45 },
+  'speculative-decoding': { avg: 16.0, max: 37 },
+  'disaggregated-pd': { avg: 17.0, max: 30 },
+  'multiproc-executor': { avg: 18.5, max: 38 },
+  'distributed-serving': { avg: 17.0, max: 44 },
+  benchmarking: { avg: 17.0, max: 57 },
+}
+
+describe('the prose reads for a beginner', () => {
+  it('budgets every stage, so a new one cannot skip the check', () => {
+    expect(Object.keys(READABILITY_BUDGET).sort()).toEqual(Object.keys(PAGES).sort())
+  })
+
+  for (const [slug, Comp] of Object.entries(PAGES)) {
+    it(`${slug} does not get harder to read`, () => {
+      const r = readability(render(Comp))
+      const budget = READABILITY_BUDGET[slug]
+
+      expect(r.count, 'no prose found — did the article markup change?').toBeGreaterThan(20)
+      expect(
+        Number(r.avg.toFixed(1)),
+        `average sentence is ${r.avg.toFixed(1)} words, budget ${budget.avg}. Lower the budget when you shorten the prose; never raise it.`
+      ).toBeLessThanOrEqual(budget.avg)
+      expect(
+        r.max,
+        `longest sentence is ${r.max} words, budget ${budget.max}:\n  "${r.longest}"`
+      ).toBeLessThanOrEqual(budget.max)
+    })
+  }
+
+  it('never leaves a cross-stage reference as bare prose', async () => {
+    const { readdirSync, readFileSync } = await import('node:fs')
+    const { fileURLToPath } = await import('node:url')
+    const { dirname, join } = await import('node:path')
+    const stagesDir = dirname(fileURLToPath(import.meta.url))
+
+    const offenders = []
+    for (const f of readdirSync(stagesDir)) {
+      if (!f.endsWith('.jsx') || f.endsWith('.test.jsx')) continue
+      // The map's "Start at stage 01" is a call to action, not a reference.
+      if (f === 'RoadmapMap.jsx') continue
+      const src = readFileSync(join(stagesDir, f), 'utf8')
+      for (const m of src.matchAll(/stage \d\d/g)) offenders.push(`${f}: "${m[0]}"`)
+    }
+    expect(
+      offenders,
+      'write <StageRef n={7} /> instead — a beginner needs to be able to follow a forward reference'
+    ).toEqual([])
+  })
+})
+
+describe('acts hand off to each other', () => {
+  it('every act but the last carries a handoff, and it lands on that act’s final stage', () => {
+    chapters.forEach((ch, i) => {
+      const last = stagesOf(ch.id).at(-1)
+      const isFinalAct = i === chapters.length - 1
+
+      expect(Boolean(ch.handoff), `${ch.id} handoff`).toBe(!isFinalAct)
+      stagesOf(ch.id).forEach((s) => {
+        const expected = !isFinalAct && s.slug === last.slug
+        expect(Boolean(bridgeFor(s.slug)), `bridge on ${s.slug}`).toBe(expected)
+      })
+    })
+  })
+
+  it('renders the bridge at the foot of the act, pointing at the next act', () => {
+    const html = render(PAGES['engine-anatomy'])
+    const bridge = bridgeFor('engine-anatomy')
+    expect(html).toContain('End of this act')
+    expect(html).toContain(bridge.have)
+    expect(html).toContain(`/stage/${bridge.firstStage.slug}`)
+    // A mid-act stage gets nothing.
+    expect(render(PAGES['prefill-vs-decode'])).not.toContain('End of this act')
   })
 })

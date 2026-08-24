@@ -34,8 +34,12 @@ No linter or formatter is configured; match the surrounding style.
 
 ### One source of truth for structure
 
-`src/content/roadmap.js` declares chapters and stages (slug, number, title, hook, concepts, sims). It
-drives the router, prev/next, and the roadmap map page. Adding or renaming a stage means editing
+`src/content/roadmap.js` declares chapters and stages (slug, number, title, hook, concepts, sims,
+`prereq`). It drives the router, prev/next, and the roadmap map page. Two fields serve the reader's
+path through the site rather than the routing: a stage's `prereq` lists the earlier stages it builds
+on, which `StageHeader` renders as links, and a chapter's `handoff` is the act bridge —
+`bridgeFor(slug)` returns it only on that act's last stage, and `StageLayout` renders it there with
+no page opting in. Adding or renaming a stage means editing
 **three** places, and `src/stages/stages.test.jsx` fails if they disagree:
 
 1. the `stages` array in `content/roadmap.js` (numbers must be contiguous from 1)
@@ -112,7 +116,7 @@ still identifies its stage.
 `Benchmarking.jsx` have one, and a test pins that list.
 
 Shared chrome is in `src/components/ui/index.jsx` (SimPanel, SimFrame, StepControls, Knob, Callout,
-CodeBlock, BlogFigure, StatRow + StatTile, Badge, Legend, Takeaways); shared visualizations in
+CodeBlock, BlogFigure, StatRow + StatTile, Badge, Legend, Takeaways, StageRef, ActBridge); shared visualizations in
 `src/components/viz/index.jsx` (BlockGrid, QueueLane, TokenStrip, Timeline, DistChart, LineChart,
 NodeGraph, MeterBar, StackedBar).
 
@@ -145,6 +149,32 @@ Rules worth knowing before editing:
 `<BlogFigure src="kv_cache_blocks.png">` takes a bare filename (resolved against `BASE_URL`). A test
 greps stage files for `src="…png"` literals and asserts the file exists in `public/img/`, so keep the
 prop a literal string rather than a variable.
+
+## How the prose is written
+
+The reader is assumed to know transformers and attention and **nothing** about inference serving.
+That is the whole audience: someone competent who has never run a server. Stage 02
+(`EngineAnatomy.jsx`) is the reference voice — match it.
+
+- **One idea per sentence.** If a sentence has two clauses doing different jobs, it is two
+  sentences. `stages.test.jsx` measures the *rendered* article and holds every stage to a
+  `READABILITY_BUDGET` — an average and a longest-sentence ceiling. It is a ratchet: rewriting a
+  stage lowers its two numbers, and nothing may raise them. The bar to aim for is the one
+  `engine-anatomy` already meets — average under 18 words, no sentence over 35.
+- **Gloss every identifier in English at first use on the page.** `<Code>free_block_queue</Code>` is
+  not self-explanatory — say what it holds. Same for every acronym: HBM, DAG, FSM, EOS, VRAM, TP/PP.
+  A term is "introduced" by the lowest-numbered stage that names it.
+- **Why before what.** Open a section with the problem the part solves, then the mechanism. "The
+  scheduler has picked who runs; those requests now have to become one tensor" beats "the model
+  executor's `execute_model` delegates to the `Worker`".
+- **Never forward-reference a mechanism you have not earned.** Name the consequence in the earlier
+  stage and let the later stage own the mechanism; link with `<StageRef>` so the reader can jump.
+- **Cross-stage references are links, never prose.** Write `<StageRef n={7} />`, not "stage 07" —
+  the text comes from `roadmap.js`, and a test fails on any bare `stage NN` left in a stage file.
+- **Bind paragraphs to the simulator with specific actions.** "Set `block_size` to 4 and step six
+  times; watch row 3 jump" beats "watch the panel on the right".
+- **Derive a number in the prose before it appears in a `<Takeaways>`.** Takeaways recap; they do
+  not introduce.
 
 ## Tests carry the site's factual claims
 

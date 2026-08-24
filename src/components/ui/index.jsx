@@ -1,4 +1,7 @@
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
+
+import { bridgeFor, stageByNumber } from '../../content/roadmap'
 
 /*
  * Shared chrome, in the Modernist language: square corners, 2px rules between
@@ -443,6 +446,55 @@ export function Takeaways({ items }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A cross-stage reference, e.g. `<StageRef n={7} />` → "stage 07", linked.
+ *
+ * Cross-references are links rather than prose for two reasons: a beginner
+ * hitting a forward reference can follow it, and the number and title come from
+ * roadmap.js, so a renumbered stage cannot leave a stale mention behind.
+ * `stages.test.jsx` fails on any bare "stage NN" left in a page.
+ *
+ * `title` renders the long form — "Prefix caching (stage 07)" — for the first
+ * mention on a page or the start of a sentence.
+ */
+export function StageRef({ n, title = false }) {
+  const stage = stageByNumber[n]
+  if (!stage) return null
+  const label = `stage ${String(stage.n).padStart(2, '0')}`
+  return (
+    <Link to={`/stage/${stage.slug}`}>{title ? `${stage.title} (${label})` : label}</Link>
+  )
+}
+
+/**
+ * The handoff between acts, rendered by StageLayout at the foot of an act's last
+ * stage and nowhere else (bridgeFor returns null elsewhere, so pages don't opt
+ * in). Thirteen stages is a long read; this is where a reader finds out what
+ * they are now holding and why the next act needs it.
+ */
+export function ActBridge({ slug }) {
+  const bridge = bridgeFor(slug)
+  if (!bridge) return null
+
+  return (
+    <div className="mt-11 border-t-2 border-edge pt-6">
+      <div className={`${MICRO} mb-4 text-accent-700`}>End of this act</div>
+      <p className="mt-0 mb-3 text-[15px] leading-[1.6]">
+        <strong>What you have now.</strong> {bridge.have}
+      </p>
+      <p className="mt-0 mb-4 text-[15px] leading-[1.6]">
+        <strong>What comes next.</strong> {bridge.next}
+      </p>
+      <Link
+        to={`/stage/${bridge.firstStage.slug}`}
+        className="inline-block text-[17px] font-[800] tracking-[-0.015em]"
+      >
+        Act {String(bridge.nextActNumber).padStart(2, '0')} · {bridge.nextAct.title} →
+      </Link>
     </div>
   )
 }

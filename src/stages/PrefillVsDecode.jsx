@@ -1,8 +1,7 @@
-import { Link } from 'react-router-dom'
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import batching, { utilization } from '../sim/batching'
-import { Callout, Code, CodeBlock, StatRow, StatTile, Takeaways } from '../components/ui'
+import { Callout, Code, CodeBlock, StageRef, StatRow, StatTile, Takeaways } from '../components/ui'
 import { C, QueueLane, Timeline } from '../components/viz'
 
 function BatchingViz({ sim }) {
@@ -154,7 +153,7 @@ export default function PrefillVsDecode() {
       <p>
         vLLM's V1 scheduler can mix prefills and decodes in the <em>same</em> step. The V0 engine
         could only do one or the other per step, which left performance on the table — you'll see
-        exactly how the mixing works in <Link to="/stage/forward-pass">stage 05</Link>.
+        exactly how the mixing works in <StageRef n={5} />.
       </p>
 
       <h2>Why batching naively goes wrong</h2>
@@ -180,11 +179,11 @@ export default function PrefillVsDecode() {
         population — old requests and newly arrived ones together.
       </p>
       <p>
-        The reason this is even possible is a detail of how the forward pass is built: rather than
-        stacking sequences into a padded rectangle, vLLM concatenates them into one long flat "super
-        sequence", with position indices and custom attention kernels making sure each sequence only
-        attends to its own tokens. There is no rectangle to keep intact, so there is nothing
-        stopping the batch composition from changing every step.
+        Rebuilding the batch that often sounds like it should be expensive. Here it is close to
+        free, and the reason is worth stating now even though the mechanism comes later: a vLLM
+        batch is not a fixed rectangle of sequences that has to be held together from one step to
+        the next. There is no shape to preserve, so nothing stops the membership changing. How the
+        batch gets built that way is the subject of <StageRef n={5} />.
       </p>
 
       <Callout kind="gotcha" title="Offline vs online">
@@ -193,7 +192,7 @@ export default function PrefillVsDecode() {
           prompts you handed it — there is no mechanism to inject new requests mid-run. Continuous
           batching becomes visible with the <em>asynchronous</em> engine, where requests arrive over
           the network at arbitrary times. But the underlying capability is in the engine core either
-          way, because of that flattened-batch design.
+          way, because of how the batch is built.
         </p>
       </Callout>
 
@@ -220,7 +219,7 @@ if __name__ == "__main__":
         items={[
           'Prefill is compute-bound and processes the whole prompt at once; decode is memory-bandwidth-bound and produces one token per pass. Nearly every optimization in this roadmap exists because these two profiles differ.',
           'Static batching wastes capacity in proportion to how much output lengths vary, because the batch is only as free as its slowest member.',
-          'Continuous batching admits and retires requests per step. It works because the batch is a flat concatenated sequence rather than a padded rectangle — so its composition can change at any step.',
+          'Continuous batching admits and retires requests every step rather than every batch. It is possible because a vLLM batch has no fixed shape to hold together between steps — the forward-pass stage shows what it is instead.',
         ]}
       />
     </StageLayout>

@@ -8,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
@@ -324,7 +325,8 @@ outputs = llm.generate(prompts, sampling_params)`}
 
       <h2>How it lands in the engine</h2>
       <p>
-        The setup happens in the two worker procedures from stage 02: <strong>init device</strong>{' '}
+        The setup happens in the two worker procedures from <StageRef n={2} />:{' '}
+        <strong>init device</strong>{' '}
         creates the drafter (e.g. <Code>NgramProposer</Code>) and a <Code>rejection_sampler</Code>{' '}
         (partly written in Triton), and <strong>load model</strong> loads the draft weights — a
         no-op for n-gram. Then per request:
@@ -340,7 +342,7 @@ outputs = llm.generate(prompts, sampling_params)`}
         <li>
           on the next step, add <Code>len(spec_token_ids)</Code> to the request's "new tokens" count
           so <Code>allocate_slots</Code> reserves enough KV blocks — this is exactly the "not always
-          1" from stage 04;
+          1" from <StageRef n={4} />;
         </li>
         <li>
           copy the drafts into <Code>input_batch.token_ids_cpu</Code> to form context + draft;
@@ -359,7 +361,8 @@ outputs = llm.generate(prompts, sampling_params)`}
         <p>
           Speculation spends spare compute to shorten a single request's wall-clock time. But under
           heavy load that compute isn't spare — it's being used to batch other users' decodes. At
-          high batch sizes the GPU is already compute-bound (stage 13's roofline), so verifying
+          high batch sizes the GPU is already compute-bound (the roofline in <StageRef n={13} />), so
+          verifying
           throwaway drafts competes with real work and aggregate throughput can drop. Speculative
           decoding is a latency optimization for lightly-loaded or latency-critical serving, not a
           free win everywhere.

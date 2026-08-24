@@ -1,7 +1,7 @@
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import scheduler, { BLOCK } from '../sim/scheduler'
-import { Callout, Code, CodeBlock, StatRow, StatTile, Takeaways } from '../components/ui'
+import { Callout, Code, CodeBlock, StageRef, StatRow, StatTile, Takeaways } from '../components/ui'
 import { C, MeterBar, QueueLane, StackedBar, Timeline } from '../components/viz'
 
 function SchedViz({ sim }) {
@@ -136,7 +136,7 @@ export default function Scheduler() {
           mid-decode and you'll see requests get preempted and re-prefilled — watch the
           recomputed-tokens counter, that's pure waste. <strong>Drop “token budget” to 24</strong>{' '}
           with a wide prompt spread: long prompts become unschedulable and the sim deadlocks, which
-          is exactly the hole stage 06 fills.
+          is exactly the hole <StageRef n={6} /> fills.
         </>
       }
       panel={<SchedViz sim={sim} />}
@@ -144,7 +144,7 @@ export default function Scheduler() {
       <p>
         Every engine step begins with one decision: of everything currently in the system, who runs
         now? That decision is made against two hard limits — a per-step{' '}
-        <strong>token budget</strong>, and the finite pool of KV blocks from stage 03.
+        <strong>token budget</strong>, and the finite pool of KV blocks from <StageRef n={3} />.
       </p>
 
       <h2>Decode first</h2>
@@ -155,7 +155,7 @@ export default function Scheduler() {
       <ol>
         <li>
           computes how many new tokens it needs — usually 1, but not always: speculative decoding
-          and async scheduling both make it more (stage 09);
+          and async scheduling both make it more (<StageRef n={9} />);
         </li>
         <li>
           calls <Code>allocate_slots</Code>;
@@ -164,7 +164,7 @@ export default function Scheduler() {
       </ol>
       <p>
         Only then does it turn to <Code>waiting</Code> and pull in prefills: fetch the number of
-        already-computed blocks (zero unless prefix caching is on, stage 07), call{' '}
+        already-computed blocks (zero unless prefix caching is on, <StageRef n={7} />), call{' '}
         <Code>allocate_slots</Code>, pop the request out of <Code>waiting</Code> into{' '}
         <Code>running</Code> with status <Code>RUNNING</Code>, and subtract from the budget again.
       </p>

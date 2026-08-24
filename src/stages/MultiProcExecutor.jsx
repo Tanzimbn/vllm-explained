@@ -8,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
@@ -305,8 +306,8 @@ export default function MultiProcExecutor() {
         </li>
         <li>
           Each new process runs <Code>WorkerProc.worker_main</Code>, instantiating a worker through
-          the very same "init device / load model / initialize KV cache" procedures from stage 02 —
-          now with TP-partitioned weights.
+          the very same "init device / load model / initialize KV cache" procedures from{' '}
+          <StageRef n={2} /> — now with TP-partitioned weights.
         </li>
         <li>
           Each worker works out whether it is the <strong>driver</strong> (rank 0 in the TP group)

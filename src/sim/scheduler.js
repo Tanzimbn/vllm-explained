@@ -253,7 +253,7 @@ export default defineSim({
     const anyLeft = requests.some((r) => r.status !== 'done')
     const stuck =
       !progressed && anyLeft && running.length === 0 && requests.every((r) => r.status !== 'unborn')
-        ? 'Nothing can be scheduled: every remaining prompt is longer than the token budget. This is precisely the gap chunked prefill (stage 06) closes.'
+        ? 'Nothing can be scheduled: every remaining prompt is longer than the token budget. This is precisely the gap chunked prefill closes.'
         : null
 
     return {

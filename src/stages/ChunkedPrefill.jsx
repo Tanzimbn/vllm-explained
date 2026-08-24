@@ -7,6 +7,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
@@ -188,7 +189,7 @@ export default function ChunkedPrefill() {
       <p>
         Cap the number of new tokens a prefill may contribute per step. If the requested number
         exceeds <Code>long_prefill_token_threshold</Code>, reset it to exactly that value. The
-        block-indexing logic from stage 03 already handles a request whose KV arrives in pieces —{' '}
+        block-indexing logic from <StageRef n={3} /> already handles a request whose KV arrives in pieces —{' '}
         <Code>slot_mapping</Code> doesn't care whether positions 0–127 and 128–255 were computed in
         the same forward pass. So nothing else has to change.
       </p>

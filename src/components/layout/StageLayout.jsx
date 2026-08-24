@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { neighbours } from '../../content/roadmap'
-import { SimPanel } from '../ui'
+import { ActBridge, SimPanel } from '../ui'
 
 /*
  * The two-pane stage: prose on the left, the stage's primary simulator pinned in
@@ -92,6 +92,8 @@ export default function StageLayout({
       <article className={pane.article}>
         <div className="max-w-[70ch]">
           {children}
+          {/* Renders only at the foot of an act's last stage; null elsewhere. */}
+          <ActBridge slug={slug} />
           <PrevNext slug={slug} />
         </div>
       </article>

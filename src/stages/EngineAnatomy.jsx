@@ -1,7 +1,7 @@
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import engine, { ENGINE_EDGES, ENGINE_GROUPS, ENGINE_NODES, PHASES } from '../sim/engine'
-import { BlogFigure, Callout, Card, Code, CodeBlock, Takeaways } from '../components/ui'
+import { BlogFigure, Callout, Card, Code, CodeBlock, StageRef, Takeaways } from '../components/ui'
 import { NodeGraph } from '../components/viz'
 
 function EngineViz({ sim }) {
@@ -90,7 +90,7 @@ export default function EngineAnatomy() {
         process, so "passing the job along" is an ordinary function call. Nothing is sent anywhere.
       </p>
       <p>
-        It earns its keep by being replaceable. In stage 12 the client becomes a{' '}
+        It earns its keep by being replaceable. In <StageRef n={12} /> the client becomes a{' '}
         <Code>DPLBAsyncMPClient</Code>: it takes the exact same request, but sends it over a socket
         to engine processes running elsewhere, and load-balances across them. The code on either
         side of it does not change — the caller still just calls the client. Swapping that one part
@@ -107,7 +107,7 @@ export default function EngineAnatomy() {
         </li>
         <li>
           <strong>Structured output manager</strong> — keeps the output to a shape you asked for,
-          like valid JSON (stage 08).
+          like valid JSON (<StageRef n={8} />).
         </li>
         <li>
           <strong>Scheduler</strong> — decides who runs next. It holds the policy (<Code>FCFS</Code>{' '}
@@ -127,8 +127,8 @@ export default function EngineAnatomy() {
           nobody is using yet. There are often hundreds of thousands of them, depending on how much
           VRAM you have and how big a block is. A block is where the model parks the keys and values
           it has already worked out for a few tokens, so it never has to work them out twice.
-          Handing blocks out and taking them back is what paged attention <em>is</em> — stage 03 is
-          entirely about this.
+          Handing blocks out and taking them back is what paged attention <em>is</em> —{' '}
+          <StageRef n={3} /> is entirely about this.
         </p>
       </Callout>
 

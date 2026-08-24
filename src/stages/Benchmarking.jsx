@@ -8,6 +8,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
@@ -448,7 +449,7 @@ export default function Benchmarking() {
           </li>
           <li>
             <strong>Benchmarking with prefix caching accidentally on.</strong> Repeat the same
-            prompts and stage 07 makes your prefill numbers fictional.
+            prompts and prefix caching (<StageRef n={7} />) makes your prefill numbers fictional.
           </li>
           <li>
             <strong>

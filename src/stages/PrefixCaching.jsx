@@ -7,6 +7,7 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
@@ -198,8 +199,8 @@ export default function PrefixCaching() {
       <p>
         Real traffic repeats itself. A system prompt, a few-shot preamble, a document every question
         is asked about — the same leading tokens arrive over and over. Recomputing their KV every
-        time is pure waste, and the block structure from stage 03 already gives us everything needed
-        to avoid it.
+        time is pure waste, and the block structure from <StageRef n={3} /> already gives us
+        everything needed to avoid it.
       </p>
 
       <h2>Blocks get identities</h2>

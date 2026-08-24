@@ -343,7 +343,7 @@ def run_decode(prefill_done):
           'Disaggregation puts prefill and decode on separate instances so bursty prefill cannot inflate decode steps. That buys independent control of TTFT and ITL.',
           "The cost is shipping each request's KV cache between machines before decode can start — which raises TTFT and makes connector performance the deciding factor in whether it pays off.",
           'The connector lifecycle is: instantiate (worker + scheduler roles) → get_num_new_matched_tokens → update_state_after_alloc → build_connector_meta → start_load_kv / wait_for_save around the forward pass.',
-          "Architecturally this is prefix caching with a remote cache: the external hit count is added to the local computed-token count before allocate_slots, reusing stage 07's machinery.",
+          "Architecturally this is prefix caching with a remote cache: the external hit count is added to the local computed-token count before allocate_slots, reusing prefix caching's machinery.",
         ]}
       />
     </StageLayout>
