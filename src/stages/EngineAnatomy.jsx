@@ -1,7 +1,7 @@
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import engine, { ENGINE_EDGES, ENGINE_GROUPS, ENGINE_NODES, PHASES } from '../sim/engine'
-import { BlogFigure, Callout, Card, Code, CodeBlock, SimFrame, Takeaways } from '../components/ui'
+import { BlogFigure, Callout, Card, Code, CodeBlock, Takeaways } from '../components/ui'
 import { NodeGraph } from '../components/viz'
 
 function EngineViz({ sim }) {
@@ -50,45 +50,71 @@ export default function EngineAnatomy() {
       slug="engine-anatomy"
       sim={sim}
       simTitle="One request through the whole engine"
-      simSubtitle="Highlighted node = the component currently doing work. The dashed edges are the ones that only matter later: freed blocks returning to the pool, and the grammar bitmask reaching into sampling."
+      simSubtitle="The highlighted box is the part doing work right now. The dashed arrows only matter later on: freed blocks going back to the pool, and the grammar mask reaching into sampling."
       panel={<EngineViz sim={sim} />}
     >
       <p>
-        Before opening any single box, it helps to know how many boxes there are. The engine is a
-        small number of components with clean responsibilities, and the whole rest of this roadmap
-        is either zooming into one of them or swapping one for a bigger version of itself.
+        Before we open any one box, it helps to count the boxes. The engine is only a handful of
+        parts, and each part has one clear job. Everything later in this roadmap is either a closer
+        look at one of these parts, or a swap of one part for a bigger version of itself.
       </p>
 
-      <h2>The constructor</h2>
+      <h2>What gets built at startup</h2>
       <p>
-        Building an <Code>LLM</Code> assembles four things:
+        Making an <Code>LLM</Code> object runs the constructor — the setup that happens once, before
+        any request shows up. It puts four things in place:
       </p>
       <ul>
         <li>
-          <strong>vLLM config</strong> — every knob for model, cache, and parallelism settings.
+          <strong>vLLM config</strong> — one bag holding every setting: which model, how big the
+          cache is, how many GPUs to spread across.
         </li>
         <li>
-          <strong>Processor</strong> — turns raw inputs into <Code>EngineCoreRequest</Code>s via
-          validation, tokenization, and processing.
+          <strong>Processor</strong> — the front door. It checks your input, turns the text into
+          token ids, and packs the result into an <Code>EngineCoreRequest</Code>.
         </li>
         <li>
-          <strong>Engine core client</strong> — here an <Code>InprocClient</Code>, which is
-          basically the <Code>EngineCore</Code> itself. Stage 12 replaces it with a{' '}
-          <Code>DPLBAsyncMPClient</Code> and that is most of what "serving at scale" means.
+          <strong>Engine core client</strong> — the middleman. When any code wants the engine to do
+          work, it calls the client, and the client passes the job to the <Code>EngineCore</Code>{' '}
+          that actually does it.
         </li>
         <li>
-          <strong>Output processor</strong> — converts raw <Code>EngineCoreOutputs</Code> into the{' '}
-          <Code>RequestOutput</Code> the caller sees.
+          <strong>Output processor</strong> — the back door. It turns the engine's raw{' '}
+          <Code>EngineCoreOutputs</Code> into the <Code>RequestOutput</Code> you actually read.
         </li>
       </ul>
+
       <p>
-        The <Code>EngineCore</Code> in turn contains a <strong>Model Executor</strong> (drives
-        forward passes; a <Code>UniProcExecutor</Code> with one worker on one GPU for now), a{' '}
-        <strong>Structured Output Manager</strong> (guided decoding, stage 08), and the{' '}
-        <strong>Scheduler</strong> — which holds the policy setting (<Code>FCFS</Code> or{' '}
-        <Code>priority</Code>), the <Code>waiting</Code> and <Code>running</Code> queues, and the{' '}
-        <strong>KV cache manager</strong>: the heart of paged attention.
+        That middleman looks pointless at first, and right now it nearly is. The client here is an{' '}
+        <Code>InprocClient</Code>, and the <Code>EngineCore</Code> is sitting in the very same
+        process, so "passing the job along" is an ordinary function call. Nothing is sent anywhere.
       </p>
+      <p>
+        It earns its keep by being replaceable. In stage 12 the client becomes a{' '}
+        <Code>DPLBAsyncMPClient</Code>: it takes the exact same request, but sends it over a socket
+        to engine processes running elsewhere, and load-balances across them. The code on either
+        side of it does not change — the caller still just calls the client. Swapping that one part
+        is most of what turning this into a real server means.
+      </p>
+
+      <p>
+        Open up the <Code>EngineCore</Code> and there are three more parts inside:
+      </p>
+      <ul>
+        <li>
+          <strong>Model executor</strong> — runs the forward passes. For now that is a{' '}
+          <Code>UniProcExecutor</Code>: one worker, one GPU.
+        </li>
+        <li>
+          <strong>Structured output manager</strong> — keeps the output to a shape you asked for,
+          like valid JSON (stage 08).
+        </li>
+        <li>
+          <strong>Scheduler</strong> — decides who runs next. It holds the policy (<Code>FCFS</Code>{' '}
+          or <Code>priority</Code>), a <Code>waiting</Code> queue and a <Code>running</Code> queue,
+          and the <strong>KV cache manager</strong> — the heart of paged attention.
+        </li>
+      </ul>
 
       <BlogFigure
         src="engine_constructor.png"
@@ -97,42 +123,44 @@ export default function EngineAnatomy() {
 
       <Callout kind="key" title="The one data structure to remember">
         <p>
-          The KV-cache manager maintains a <Code>free_block_queue</Code> — a pool of available
-          KV-cache blocks, often hundreds of thousands of them depending on VRAM and block size.
-          During paged attention these blocks are the indexing structure mapping tokens to their
-          computed KV cache. Stage 03 is entirely about this.
+          The KV cache manager keeps a <Code>free_block_queue</Code>: a pool of KV-cache blocks that
+          nobody is using yet. There are often hundreds of thousands of them, depending on how much
+          VRAM you have and how big a block is. A block is where the model parks the keys and values
+          it has already worked out for a few tokens, so it never has to work them out twice.
+          Handing blocks out and taking them back is what paged attention <em>is</em> — stage 03 is
+          entirely about this.
         </p>
       </Callout>
 
-      <p>For a standard (non-MLA) transformer layer, one block's size in bytes is:</p>
+      <p>For a standard (non-MLA) transformer layer, one block takes up this many bytes:</p>
       <CodeBlock
         lang="text"
-        caption="Which is why block_size, num_kv_heads and dtype all show up in capacity planning: they decide how many blocks fit in the VRAM left over after weights."
+        caption="This is why block_size, num_kv_heads and dtype keep coming up in capacity planning: together they decide how many blocks fit in the VRAM that is left once the weights are loaded."
         code={`2 (key/value) * block_size (default=16) * num_kv_heads * head_size * dtype_num_bytes`}
       />
 
-      <h2>Worker startup: three procedures</h2>
+      <h2>Worker startup: three steps</h2>
       <p>
-        Constructing the model executor creates a <Code>Worker</Code> and runs three procedures.
-        These same three will later run independently on every worker process across every GPU — so
-        it is worth knowing them by name.
+        Building the model executor creates one <Code>Worker</Code>, and that worker runs three
+        setup steps. Learn their names now: later, when there are many GPUs, these exact three run
+        on every worker process at once.
       </p>
       <div className="my-5 grid gap-3 sm:grid-cols-3">
         {[
           {
             n: '01',
             t: 'Init device',
-            d: 'Assign a CUDA device, check the dtype is supported, verify enough VRAM given gpu_memory_utilization, set up DP/TP/PP/EP, then build a model_runner and an InputBatch (CPU-side buffers, block tables, sampling metadata).',
+            d: 'Pick a CUDA device, check the dtype works on it, and check there is enough VRAM for the gpu_memory_utilization you asked for. Then wire up the parallelism groups (DP/TP/PP/EP) and build a model_runner plus an InputBatch — the CPU-side scratch space for block tables and sampling settings.',
           },
           {
             n: '02',
             t: 'Load model',
-            d: 'Instantiate the architecture, load weights, call model.eval(), and optionally torch.compile() it.',
+            d: 'Build the network, load the weights into it, switch it to eval mode, and optionally hand it to torch.compile().',
           },
           {
             n: '03',
             t: 'Initialize KV cache',
-            d: 'Get the per-layer KV-cache spec, run a dummy profiling forward pass and snapshot GPU memory to compute how many blocks fit, allocate and bind the KV tensors, then capture CUDA graphs for a set of warmup batch sizes.',
+            d: 'Ask each layer how much cache it needs. Run one fake forward pass and measure the VRAM left over — that number decides how many blocks fit. Allocate them, hand them to the layers, then record CUDA graphs for a few common batch sizes.',
           },
         ].map((x) => (
           <Card key={x.n} className="p-3.5">
@@ -145,54 +173,56 @@ export default function EngineAnatomy() {
 
       <Callout kind="note" title="Where the KV cache size comes from">
         <p>
-          Notice that nobody configures the number of KV blocks directly. Step 03 measures it: run a
-          dummy forward pass, see how much VRAM is left, divide by block size. That is why changing{' '}
-          <Code>gpu_memory_utilization</Code>, the model, or the dtype silently changes how many
-          requests you can hold in flight — and therefore your throughput ceiling.
+          Notice that nobody sets the number of KV blocks by hand. Step 03 measures it: run a fake
+          forward pass, see how much VRAM is left, divide by the size of one block. So changing{' '}
+          <Code>gpu_memory_utilization</Code>, the model, or the dtype quietly changes how many
+          requests you can keep in flight at once — and that is your throughput ceiling.
         </p>
       </Callout>
 
       <h2>The loop</h2>
       <p>
-        Once fed, the engine repeatedly calls <Code>step()</Code>, and each step has exactly three
-        stages: <strong>schedule</strong> → <strong>forward pass</strong> →{' '}
-        <strong>postprocess</strong>. Step through the simulator to follow one request all the way
-        around, including two trips around the decode loop.
+        Once requests start arriving, the engine just calls <Code>step()</Code> over and over. Every
+        step does the same three things in the same order: <strong>schedule</strong> →{' '}
+        <strong>forward pass</strong> → <strong>postprocess</strong>. Nothing else. Step the panel
+        on the right to follow one request the whole way round, including two laps of the decode
+        loop.
       </p>
 
       <BlogFigure src="engine_loop.png" caption="The engine loop" max={520} />
 
-      <h2>Stop conditions</h2>
-      <p>Postprocess ends a request when any of these fire:</p>
+      <h2>When a request stops</h2>
+      <p>Postprocess is also where a request ends. Any one of these is enough to finish it:</p>
       <ul>
         <li>
-          the request exceeds its length limit — <Code>max_model_length</Code> or its own{' '}
+          it got too long — past <Code>max_model_length</Code>, or past its own{' '}
           <Code>max_tokens</Code>;
         </li>
         <li>
-          the sampled token is the EOS id — unless <Code>ignore_eos</Code> is set, which
-          benchmarking uses to force an exact output length;
+          the token just sampled is the EOS id — unless you set <Code>ignore_eos</Code>, which
+          benchmarks do so that every request produces exactly the same number of tokens;
         </li>
         <li>
-          the sampled token is in <Code>stop_token_ids</Code>;
+          the token just sampled is one of <Code>stop_token_ids</Code>;
         </li>
         <li>
-          a stop <em>string</em> appears, in which case the output is truncated at its first
-          occurrence and the request aborted.
+          a stop <em>string</em> shows up in the text, in which case the output is cut at the first
+          place it appears and the request is aborted.
         </li>
       </ul>
       <Callout kind="gotcha">
         <p>
-          A small asymmetry worth remembering: <Code>stop_token_ids</Code> <em>will</em> appear in
-          the output, but stop strings will <em>not</em>.
+          The two stop settings behave differently, which is easy to trip over. A token from{' '}
+          <Code>stop_token_ids</Code> <em>stays</em> in the output. A stop string does <em>not</em>{' '}
+          — it gets cut off.
         </p>
       </Callout>
 
       <Takeaways
         items={[
-          'The engine is: Processor → EngineCoreClient → EngineCore (Scheduler + KVCacheManager + ModelExecutor + StructuredOutputManager) → OutputProcessor. Scaling up swaps implementations behind those same seams without changing the shape.',
-          'Every step is schedule → forward pass → postprocess. Nothing else happens; every feature later in this roadmap hooks into one of those three.',
-          'The number of KV-cache blocks is measured at startup by a dummy forward pass, not configured — which makes it a function of your model, dtype, and gpu_memory_utilization.',
+          'The whole engine is: Processor → EngineCoreClient → EngineCore (Scheduler + KVCacheManager + ModelExecutor + StructuredOutputManager) → OutputProcessor. Scaling up swaps bigger parts in behind those same seams; the shape never changes.',
+          'Every step is schedule → forward pass → postprocess. Nothing else happens, and every feature later in this roadmap plugs into one of those three.',
+          'The number of KV-cache blocks is measured at startup by a fake forward pass, never configured — so it moves whenever your model, dtype, or gpu_memory_utilization moves.',
         ]}
       />
     </StageLayout>

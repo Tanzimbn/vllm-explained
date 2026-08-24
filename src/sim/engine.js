@@ -22,7 +22,7 @@ const PHASES = [
     node: 'processor',
     title: 'Processor validates & tokenizes',
     detail:
-      'The input preprocessor tokenizes the prompt and returns prompt, prompt_token_ids, and a type (text / tokens / embeds). Sampling params, priority and metadata get packed alongside it.',
+      'The preprocessor turns the prompt into token ids and notes what kind of input it was (text / tokens / embeds). The sampling params, priority and metadata get packed in alongside it.',
     produces: 'EngineCoreRequest',
     edge: 'user->processor',
   },
@@ -30,7 +30,7 @@ const PHASES = [
     node: 'client',
     title: 'Engine core client hands it off',
     detail:
-      'In the offline single-process case the client is an InprocClient, which is essentially the EngineCore itself — a direct function call. Online, this same seam becomes a ZMQ socket to another process (stage 12).',
+      'Offline, in one process, the client is an InprocClient — really just the EngineCore itself, so this is a plain function call. Online, this same seam becomes a ZMQ socket to another process (stage 12).',
     produces: 'EngineCoreRequest',
     edge: 'processor->client',
   },
@@ -38,7 +38,7 @@ const PHASES = [
     node: 'sched',
     title: 'Wrapped as a Request, status = WAITING',
     detail:
-      'EngineCore wraps it in a Request object and appends it to the scheduler\'s waiting queue — append if the policy is FCFS, heap-push if priority.',
+      "EngineCore wraps it in a Request object and puts it in the scheduler's waiting queue — on the end if the policy is FCFS, into a heap if the policy is priority.",
     produces: 'Request(WAITING)',
     edge: 'client->sched',
   },
@@ -55,7 +55,7 @@ const PHASES = [
     node: 'kv',
     title: 'allocate_slots reserves KV blocks',
     detail:
-      'The KV-cache manager computes how many 16-token blocks this request needs, pulls them off free_block_queue, and records them in req_to_blocks. If the pool is empty, something gets preempted.',
+      'The KV cache manager works out how many 16-token blocks this request needs, takes them off free_block_queue, and writes them down in req_to_blocks. If the pool is empty, something else has to be preempted to make room.',
     produces: 'list[KVCacheBlock]',
     edge: 'sched->kv',
     phase: 'step',
@@ -64,7 +64,7 @@ const PHASES = [
     node: 'exec',
     title: 'step() 2/3 — forward pass',
     detail:
-      'The model executor drives execute_model. Here that is a UniProcExecutor with one Worker on one GPU; by stage 11 it will be a MultiProcExecutor fanning out over eight, with the engine none the wiser.',
+      'The model executor calls execute_model. Here that is a UniProcExecutor: one Worker, one GPU. By stage 11 it is a MultiProcExecutor spread over eight GPUs, and the engine never notices the difference.',
     produces: 'logits',
     edge: 'sched->exec',
     phase: 'step',
@@ -73,7 +73,7 @@ const PHASES = [
     node: 'exec',
     title: 'Sample a token',
     detail:
-      'Hidden states at each sequence\'s final position are gathered, logits computed, and one token sampled per sequence according to the sampling config — greedy, temperature, top-p, top-k.',
+      'Take the hidden state at the last position of each sequence, turn it into logits, and pick one token per sequence using the sampling config — greedy, temperature, top-p, top-k.',
     produces: 'token_id',
     edge: null,
     phase: 'step',
@@ -82,7 +82,7 @@ const PHASES = [
     node: 'outproc',
     title: 'step() 3/3 — postprocess',
     detail:
-      'The token is appended to the Request, detokenized, and checked against the stop conditions. Not finished? Back to schedule for another step.',
+      'The token is added to the Request, turned back into text, and checked against the stop conditions. Not finished? Back to schedule for another step.',
     produces: 'EngineCoreOutputs',
     edge: 'exec->outproc',
     phase: 'step',
@@ -160,6 +160,4 @@ export const ENGINE_EDGES = [
   { from: 'som', to: 'exec', dashed: true },
 ]
 
-export const ENGINE_GROUPS = [
-  { label: 'EngineCore', x: 196, y: 128, w: 340, h: 162 },
-]
+export const ENGINE_GROUPS = [{ label: 'EngineCore', x: 196, y: 128, w: 340, h: 162 }]
