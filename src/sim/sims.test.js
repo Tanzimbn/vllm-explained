@@ -1244,6 +1244,38 @@ describe('distributed serving — load balancing', () => {
 })
 
 describe('roofline model', () => {
+  /**
+   * Stage 13 quotes this sweep, and in particular that B_sat does not move when
+   * the model size does. The page used to claim the opposite; the algebra says
+   * B_sat is peak compute over bandwidth, with the model size cancelling out.
+   */
+  it('produces exactly the sweep the stage 13 prose quotes', () => {
+    const base = { modelParams: 8, bandwidth: 3.35, peakFlops: 990, slaItlMs: 30 }
+
+    // The flat region: same step time from B=1 to B=256, 256x the throughput.
+    expect(stepModel(1, base).stepMs).toBeCloseTo(4.8, 1)
+    expect(stepModel(256, base).stepMs).toBeCloseTo(4.8, 1)
+    expect(Math.round(stepModel(1, base).throughput)).toBe(209)
+    expect(Math.round(stepModel(256, base).throughput)).toBe(53600)
+    expect(stepModel(256, base).bound).toBe('bandwidth')
+
+    // A bigger model lifts the whole curve.
+    const big = { ...base, modelParams: 70 }
+    expect(stepModel(1, big).stepMs).toBeCloseTo(41.8, 1)
+    expect(Math.round(stepModel(256, big).throughput)).toBe(6126)
+
+    // But the knee is a property of the hardware, not of the model.
+    expect(bSat(base)).toBeCloseTo(295.5, 1)
+    expect(bSat({ ...base, modelParams: 1 })).toBeCloseTo(bSat(base), 6)
+    expect(bSat(big)).toBeCloseTo(bSat(base), 6)
+    expect(bSat({ ...base, bandwidth: 1 })).toBeCloseTo(990, 1)
+    expect(bSat({ ...base, peakFlops: 2000 })).toBeCloseTo(597, 0)
+
+    // And an ITL SLO can be unreachable at every batch size.
+    expect(stepModel(1, big).itlMs).toBeGreaterThan(base.slaItlMs)
+    expect(stepModel(1, base).itlMs).toBeLessThan(base.slaItlMs)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const modelParams of [1, 8, 70]) {
       for (const bandwidth of [1, 3.35, 8]) {

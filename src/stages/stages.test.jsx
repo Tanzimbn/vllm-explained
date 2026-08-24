@@ -207,7 +207,10 @@ function proseBlocks(html) {
  */
 function sentences(blocks) {
   return blocks
-    .flatMap((b) => b.split(/(?<=[.!?])\s+(?=[A-Z(“"'`])/))
+    // A sentence may open with a lower-case proper noun ("vLLM"), but not with a
+    // bare identifier ("slot_mapping") — that reads badly and stays merged, so
+    // the ratchet keeps pushing back on it.
+    .flatMap((b) => b.split(/(?<=[.!?])\s+(?=[A-Z(“"'`]|[a-z][A-Z])/))
     .map((x) => x.trim())
     .filter((x) => x.split(/\s+/).length > 3)
 }
@@ -243,7 +246,7 @@ const READABILITY_BUDGET = {
   'disaggregated-pd': { avg: 16.4, max: 30 },
   'multiproc-executor': { avg: 16.0, max: 31 },
   'distributed-serving': { avg: 15.8, max: 30 },
-  benchmarking: { avg: 17.0, max: 57 },
+  benchmarking: { avg: 14.9, max: 32 },
 }
 
 describe('the prose reads for a beginner', () => {

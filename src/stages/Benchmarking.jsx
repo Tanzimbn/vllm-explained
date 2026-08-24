@@ -294,24 +294,32 @@ export default function Benchmarking() {
       ]}
       simFooter={
         <>
-          The whole free lunch of batched inference lives in the flat part of the latency curve. Try
-          a 70B model on 3.35 TB/s: <Code>B_sat</Code> moves and the flat region changes width. Then
-          set an ITL SLO and read off the largest passing batch size — that is the
-          goodput-maximizing configuration, and finding it is exactly what vLLM's auto-tune script
-          does.
+          The whole free lunch of batched inference lives in the flat part of the latency curve.
+          Try a 70B model on 3.35 TB/s: the flat part lifts from 4.8ms to 41.8ms, while{' '}
+          <Code>B_sat</Code> stays exactly where it was — the knee belongs to the hardware, not the
+          model. Then set an ITL SLO and read off the largest passing batch size. That is the
+          goodput-maximising configuration, and finding it is what vLLM's auto-tune script does.
         </>
       }
     >
       <p>
-        We've been looking at the gas particles — individual requests moving through the engine. Now
-        zoom out: how do you measure whether the whole system is any good? There are two headline
-        metrics, and they actively fight each other.
+        Every stage so far has followed individual requests through the engine. This one zooms out
+        to the only question that settles whether any of it worked: how do you measure the whole
+        system?
       </p>
       <p>
-        <strong>Latency</strong> is the time from submitting a request until tokens come back. It
-        dominates for interactive applications, where a person is waiting.{' '}
-        <strong>Throughput</strong> is tokens or requests per second. It dominates for offline batch
-        work: synthetic data generation, data cleaning, bulk classification.
+        There are two headline numbers, and they pull against each other.
+      </p>
+      <p>
+        <strong>Latency</strong> is how long a request waits before tokens come back. It is what
+        matters when a person is sitting there. <strong>Throughput</strong> is tokens or requests
+        per second across everybody. It is what matters for offline work: generating synthetic data,
+        cleaning datasets, classifying in bulk.
+      </p>
+      <p>
+        One more term, because the rest of the page leans on it. An <strong>SLO</strong> is a
+        service level objective: a promise about a number, such as "95% of requests see their first
+        token within 300ms". It is the line you have decided not to cross.
       </p>
 
       <h2>The vocabulary</h2>
@@ -348,31 +356,82 @@ export default function Benchmarking() {
 
       <h2>Why the two metrics compete</h2>
       <p>
-        The tradeoff is clearest in how batch size <Code>B</Code> affects a single decode step. As{' '}
-        <Code>B</Code> falls toward 1, ITL drops — there's less work in the step and your token
-        isn't competing with anyone else's. As <Code>B</Code> rises, ITL climbs because the step
-        does more FLOPs, but throughput improves because the cost of streaming the weights is
-        amortized across more tokens.
+        The clash is clearest in what batch size <Code>B</Code> does to one decode step. Push{' '}
+        <Code>B</Code> down toward 1 and ITL falls, because the step has less work in it and your
+        token is not queued behind anybody else's.
+      </p>
+      <p>
+        Push <Code>B</Code> up and ITL climbs, because the step now does more arithmetic. But
+        throughput improves, because the one expensive trip through the weights is being shared by
+        more tokens.
       </p>
 
       <Callout kind="key" title="The roofline picture">
         <p>
-          Below a saturation batch size <Code>B_sat</Code>, step time is dominated by HBM bandwidth
-          — streaming weights layer by layer into on-chip memory. Step latency is nearly{' '}
-          <strong>flat</strong>: computing 1 token or 10 takes about the same time, so those extra
-          tokens are effectively free. Beyond <Code>B_sat</Code> the kernels become compute-bound
-          and step time grows roughly with <Code>B</Code> — now every additional token adds to
-          everyone's ITL.
+          Below a saturation batch size <Code>B_sat</Code>, a step is limited by memory bandwidth:
+          the time goes on streaming weights out of HBM, not on arithmetic. Step time is therefore
+          almost <strong>flat</strong>. Computing one token or a hundred takes about the same time,
+          so those extra tokens are very nearly free.
         </p>
         <p>
-          Assumption: weight I/O dominates rather than KV-cache I/O, i.e. reasonably short
-          sequences.
+          Above <Code>B_sat</Code> the arithmetic becomes the limit and step time grows roughly in
+          step with <Code>B</Code>. Now every extra token in the batch adds to everybody's ITL.
+        </p>
+        <p>
+          It is called a roofline because that is the shape: a flat ceiling set by bandwidth, then a
+          slope set by compute. You are always under one or the other.
+        </p>
+        <p>
+          One assumption: this treats weight traffic as the thing that dominates, rather than
+          KV-cache traffic, which holds for reasonably short sequences.
+        </p>
+      </Callout>
+
+      <h2>Watch it happen</h2>
+      <p>
+        The panel steps batch size up a ladder for an 8B model on 3.35 TB/s of bandwidth. The step
+        time sits at 4.8ms and does not budge from <Code>B = 1</Code> all the way to{' '}
+        <Code>B = 256</Code>.
+      </p>
+      <p>
+        Throughput over that same range goes from 209 tokens per second to 53,600. That is 256 times
+        the output for the same 4.8ms per step, and it is the entire reason batched inference is
+        worth doing.
+      </p>
+      <p>
+        Now drag <Code>Model size</Code> to 70B. The flat line jumps from 4.8ms to 41.8ms, because
+        there are nearly nine times as many weights to stream every step. Throughput at{' '}
+        <Code>B = 256</Code> drops to 6,126 tokens per second.
+      </p>
+      <p>
+        But look at <Code>B_sat</Code>: it has not moved. It is 295 for a 1B model and 295 for a 70B
+        model.
+      </p>
+
+      <Callout kind="note" title="B_sat belongs to the GPU, not to the model">
+        <p>
+          Work the algebra through and <Code>B_sat</Code> comes out as peak compute divided by
+          memory bandwidth. The model size cancels: it appears in both the streaming time and the
+          arithmetic time, so it moves the whole curve up or down without moving the knee.
+        </p>
+        <p>
+          The knee moves when the hardware changes. Drop <Code>HBM bandwidth</Code> to 1 TB/s and{' '}
+          <Code>B_sat</Code> goes to 990 — slower memory means you can batch much further before
+          arithmetic becomes the problem. Raise <Code>Peak compute</Code> to 2000 TFLOP/s and it
+          moves to 597.
         </p>
       </Callout>
 
       <p>
-        The panel on the right sweeps that ladder for you: the dashed lines are the two competing
-        costs, and the solid one is their max — the time you actually pay per step.
+        Finally, set an <Code>ITL SLO</Code> and see what it does to your choices. At 30ms the 8B
+        model passes everywhere on the ladder — 4.8ms is nowhere near the line. The 70B model fails
+        at <em>every</em> batch size, including 1, because 41.8ms of weight streaming breaks the
+        promise before any batching happens.
+      </p>
+      <p>
+        That is worth sitting with. No batch size, scheduler setting or clever feature will rescue
+        that target on that hardware. The only moves left are a smaller model, faster memory, or a
+        different promise.
       </p>
 
       <BlogFigure src="roofline.png" caption="The roofline performance model" max={520} />
@@ -468,19 +527,25 @@ export default function Benchmarking() {
 
       <h2>That's the whole system</h2>
       <p>
-        Working backwards from here: goodput depends on batch size; batch size depends on how many
-        requests fit in the KV cache and how the scheduler spends its token budget; that depends on
-        paged blocks, prefix caching, and chunked prefill; and all of it runs on an executor that
-        may be one GPU or sixteen across two nodes. Every stage in this roadmap is ultimately a
-        lever on the curve you just swept.
+        Work backwards from the curve you just swept. Goodput depends on batch size. Batch size
+        depends on how many requests fit in the KV cache, and on how the scheduler spends its token
+        budget.
       </p>
       <p>
-        There's plenty the original post skips and so does this site: MLA, MoE and expert
-        parallelism, encoder-decoder models, pooling/embedding models, LoRA, sliding-window
-        attention, multimodal models, state-space models like Mamba and Jamba, hybrid KV-cache
-        allocation (Jenga), beam search, and experimental async scheduling. Most of them are close
-        to orthogonal to the flow described here — they attach to it more like plugins than like
-        rewrites.
+        Those in turn depend on paged blocks, prefix caching and chunked prefill. And all of it runs
+        on an executor that might be one GPU or sixteen across two machines. Every stage in this
+        roadmap is a lever on that one curve.
+      </p>
+      <p>
+        Plenty is skipped here, as it was in the original post. On the model side: MLA,
+        mixture-of-experts and expert parallelism, encoder-decoder models, pooling and embedding
+        models, LoRA, sliding-window attention, multimodal models, and state-space models such as
+        Mamba and Jamba. On the engine side: hybrid KV-cache allocation (Jenga), beam search, and
+        experimental async scheduling.
+      </p>
+      <p>
+        Most of them are close to independent of the flow described here. They attach to it more
+        like plugins than like rewrites.
       </p>
 
       <Takeaways
