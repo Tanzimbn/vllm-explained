@@ -162,6 +162,45 @@ describe('kvcache — the block allocator', () => {
     expect(eff('paged')).toBeGreaterThan(eff('contiguous'))
   })
 
+  /**
+   * Every knob setting has to reach a terminal state. A simulator that can be
+   * driven into a frozen picture with ▶ Run still spinning teaches nothing, and
+   * a fifth of this sim's parameter space used to do exactly that: the pool
+   * empties, every live request stalls waiting for a block, and no request can
+   * ever finish to return one.
+   */
+  it('always terminates, in every corner of the knob space', () => {
+    for (const mode of ['paged', 'contiguous']) {
+      for (const numBlocks of [16, 24, 32, 48, 64]) {
+        for (const numRequests of [3, 5, 7, 8, 10]) {
+          for (const blockSize of [4, 8, 16]) {
+            const p = { mode, numBlocks, numRequests, blockSize }
+            let s = kvcache.init(p)
+            let steps = 0
+            while (!kvcache.isDone(s, p) && steps++ < 3000) s = kvcache.step(s, p)
+            expect(kvcache.isDone(s, p), `never settles at ${JSON.stringify(p)}`).toBe(true)
+          }
+        }
+      }
+    }
+  })
+
+  it('stops on deadlock rather than spinning, and says so', () => {
+    // The pool is far too small for ten requests, so paging runs out of blocks.
+    const p = { mode: 'paged', numBlocks: 32, numRequests: 10, blockSize: 8 }
+    let s = kvcache.init(p)
+    let steps = 0
+    while (!kvcache.isDone(s, p) && steps++ < 3000) s = kvcache.step(s, p)
+
+    expect(kvcache.isDone(s, p)).toBe(true)
+    // Terminal, but not because everyone finished — this is the stuck state.
+    expect(s.requests.some((r) => r.status !== 'done')).toBe(true)
+    expect(s.freeQueue).toHaveLength(0)
+    expect(s.note).toContain('preemption')
+    // And stepping again changes nothing, which is what made it a deadlock.
+    expect(kvcache.step(s, p).requests).toEqual(s.requests)
+  })
+
   it('contiguous mode only ever holds adjacent runs', () => {
     const { trace } = runSim(kvcache, { mode: 'contiguous' }, 400)
     trace.forEach((s) => {

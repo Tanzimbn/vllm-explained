@@ -162,7 +162,7 @@ export default defineSim({
           const extra = takeFromQueue(needBlocks - r.blocks.length, r.id)
           if (!extra) {
             r.stalled = true
-            note = `${r.id} wants another block to keep decoding, and the pool is empty — this is where preemption comes in (stage 04)`
+            note = `${r.id} wants another block to keep decoding and the pool is empty. Nothing can finish to free one, so the run is stuck — this is the hole that preemption fills`
             continue
           }
           r.blocks.push(...extra)
@@ -216,8 +216,36 @@ export default defineSim({
     }
   },
 
-  isDone(s) {
-    return s.requests.every((r) => r.status === 'done')
+  /**
+   * Terminal means "no later step could differ from this one", which is not the
+   * same as "everybody finished". Both allocators can wedge:
+   *
+   *  paged      — the pool empties, every live request stalls waiting for a
+   *               block, and none can finish to return one.
+   *  contiguous — a request reserved for its worst case needs more adjacent
+   *               blocks than the pool will ever offer, so it is never admitted.
+   *
+   * Both are the honest behaviour of an allocator with no power to preempt, and
+   * both are worth seeing. What is not worth seeing is ▶ Run spinning forever on
+   * a frozen picture, which is what about a fifth of the knob space used to do.
+   * The first step is always allowed to run so that the note can say what went
+   * wrong before the run stops.
+   */
+  isDone(s, p) {
+    if (s.requests.every((r) => r.status === 'done')) return true
+    if (s.tick === 0) return false
+
+    const live = s.requests.filter((r) => r.status === 'running')
+    if (live.some((r) => !r.stalled)) return false
+
+    // Only the head of the queue can be admitted: admission stops at the first
+    // request it cannot place, so a request behind a permanently unplaceable one
+    // never gets a turn either.
+    const next = s.requests.find((r) => r.status === 'waiting')
+    if (!next) return true
+    return !(p.mode === 'paged'
+      ? ceilDiv(next.promptLen, p.blockSize) <= s.freeQueue.length
+      : findRun(s.blocks, ceilDiv(next.promptLen + next.maxTokens, p.blockSize)) >= 0)
   },
 
   invariants: [
