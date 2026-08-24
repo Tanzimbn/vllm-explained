@@ -236,7 +236,7 @@ const READABILITY_BUDGET = {
   'paged-attention': { avg: 16.0, max: 31 },
   scheduler: { avg: 15.5, max: 28 },
   'forward-pass': { avg: 16.5, max: 32 },
-  'chunked-prefill': { avg: 18.0, max: 33 },
+  'chunked-prefill': { avg: 15.2, max: 27 },
   'prefix-caching': { avg: 20.5, max: 40 },
   'guided-decoding': { avg: 18.0, max: 45 },
   'speculative-decoding': { avg: 16.0, max: 37 },
@@ -280,7 +280,7 @@ describe('the prose reads for a beginner', () => {
       // The map's "Start at stage 01" is a call to action, not a reference.
       if (f === 'RoadmapMap.jsx') continue
       const src = readFileSync(join(stagesDir, f), 'utf8')
-      for (const m of src.matchAll(/stage \d\d/g)) offenders.push(`${f}: "${m[0]}"`)
+      for (const m of src.matchAll(/stages? ?[-–]? ?\d\d/g)) offenders.push(`${f}: "${m[0]}"`)
     }
     expect(
       offenders,

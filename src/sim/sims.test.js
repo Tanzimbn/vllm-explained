@@ -589,6 +589,44 @@ describe('sampling', () => {
 })
 
 describe('chunked prefill', () => {
+  /**
+   * Stage 06 quotes both runs and the two ends of the threshold sweep, because
+   * the whole tuning story is that those two numbers move in opposite
+   * directions. Pinned so the page cannot outlive the sim.
+   */
+  it('produces exactly the runs the stage 06 prose describes', () => {
+    const base = { longPromptLen: 1024, threshold: 128, tokenBudget: 2048, numDecoders: 4 }
+    const run = (p) => {
+      const { state } = runSim(chunkedPrefill, p, 400)
+      return { s: state, itl: itlStats(state) }
+    }
+
+    const off = run({ ...base, chunking: 'off' })
+    expect(Math.round(off.itl.p50)).toBe(6)
+    expect(Math.round(off.itl.max)).toBe(99)
+    expect(off.itl.spike).toBeGreaterThan(15)
+
+    const on = run({ ...base, chunking: 'on' })
+    expect(Math.round(on.itl.max)).toBe(18)
+    expect(on.itl.spike).toBe(1)
+
+    // Same work, same wall clock — only the distribution of the waiting changed.
+    expect([on.s.tick, Math.round(on.s.elapsedMs)]).toEqual([off.s.tick, Math.round(off.s.elapsedMs)])
+    expect([on.s.tick, Math.round(on.s.elapsedMs)]).toEqual([10, 156])
+
+    // What chunking costs: the long prompt's own time to first token.
+    expect(Math.round(off.s.prefillTTFT)).toBe(99)
+    expect(Math.round(on.s.prefillTTFT)).toBe(143)
+
+    // The trade-off, at both ends of the threshold knob.
+    const coarse = run({ ...base, chunking: 'on', threshold: 512 })
+    const fine = run({ ...base, chunking: 'on', threshold: 64 })
+    expect(Math.round(coarse.itl.spike)).toBe(8)
+    expect(Math.round(coarse.s.prefillTTFT)).toBe(105)
+    expect(fine.itl.spike).toBe(1)
+    expect(Math.round(fine.s.prefillTTFT)).toBe(192)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const chunking of ['on', 'off']) {
       for (const threshold of [64, 128, 512]) {

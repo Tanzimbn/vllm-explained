@@ -346,7 +346,7 @@ export default function MultiProcExecutor() {
           </li>
         </ul>
         <p>
-          The scheduler, KV-cache manager, and everything in stages 03–10 are untouched. That's why
+          The scheduler, the KV-cache manager and every feature so far are untouched. That is why
           this stage arrives so late and is so short: sharding is a swap behind one seam.
         </p>
       </Callout>
