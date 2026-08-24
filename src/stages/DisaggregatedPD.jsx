@@ -7,10 +7,11 @@ import {
   Card,
   Code,
   CodeBlock,
-  SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, reqColor } from '../components/viz'
 
@@ -234,28 +235,39 @@ export default function DisaggregatedPD() {
       simFooter={
         <>
           The trade is visible in two numbers. <strong>p95 ITL</strong> drops sharply when you
-          disaggregate — decode steps are now uniformly small. <strong>Mean TTFT</strong> gets
-          worse, because a request must ship its whole KV cache to another machine before its first
-          token can be produced. Turn up the transfer cost and watch disaggregation stop being worth
-          it: this is why the connector implementation matters so much in practice.
+          disaggregate, because decode steps are now uniformly small. <strong>Mean TTFT</strong>{' '}
+          gets worse, because a request must ship its whole KV cache to another machine before its
+          first token can be produced. Turn up the transfer cost and watch TTFT climb while the ITL
+          win stays flat: this is why the connector implementation matters so much in practice.
         </>
       }
+      tryThis={[
+        'Run colocated: the worst inter-token gap is 82ms against a typical 6.5ms.',
+        'Switch to disaggregated: p95 ITL drops to 6.5ms, and mean TTFT rises from 255ms to 379ms.',
+        'Push KV transfer from 1 to 4. TTFT goes from 316ms to 456ms while the ITL win does not budge.',
+      ]}
       panel={<PdViz sim={sim} />}
     >
       <p>
-        Stage 06 fixed the case where <em>one</em> long prompt disrupts a step. But if long prompts
-        keep arriving, every step keeps containing one, and chunking only makes the disruption
-        smaller and more frequent. At some point the right answer is to stop making these two
-        workloads share a GPU at all.
+        <StageRef n={6} title /> fixed the case where <em>one</em> long prompt spoils a step. But if
+        long prompts keep arriving, every step keeps containing one. Chunking then makes the damage
+        smaller and more frequent rather than making it go away.
+      </p>
+      <p>
+        At some point the right answer is to stop making these two workloads share a GPU at all.
       </p>
 
       <h2>Split the fleet</h2>
       <p>
-        Prefill and decode have opposite performance profiles, so run <Code>N</Code> prefill
-        instances and <Code>M</Code> decode instances, autoscaling each on the live request mix.
-        Prefill workers write KV to a dedicated KV-cache service; decode workers read from it. Long,
-        bursty prefill is isolated from steady, latency-sensitive decode, which gives much tighter
-        control over TTFT and ITL independently.
+        Prefill and decode want opposite things from the hardware, so give them different machines.
+        Run <Code>N</Code> prefill instances and <Code>M</Code> decode instances, and scale each on
+        the live mix of traffic.
+      </p>
+      <p>
+        Prefill workers write their KV to a dedicated KV-cache service, and decode workers read it
+        back. Long bursty prefill is now isolated from steady, latency-sensitive decode, which means
+        you can tune TTFT and ITL separately instead of trading one against the other in a single
+        step.
       </p>
 
       <BlogFigure
@@ -263,12 +275,34 @@ export default function DisaggregatedPD() {
         caption="Disaggregated prefill/decode with a KV-cache service between"
       />
 
+      <h2>Watch the trade</h2>
+      <p>
+        The panel sends six requests in bursts. Run it with <Code>Deployment</Code> on{' '}
+        <Code>colocated</Code>: the worst inter-token gap is 82ms against a typical 6.5ms, because
+        every so often a decode step has a prefill bolted onto it.
+      </p>
+      <p>
+        Switch <Code>Deployment</Code> to <Code>disaggregated</Code>. Now p95 ITL is 6.5ms — the
+        same as the median, because decode steps are all small and nothing else lands in them. That
+        is a twelvefold improvement in the number a streaming user actually feels.
+      </p>
+      <p>
+        And here is the bill. Mean TTFT rises from 255ms to 379ms, about 50% worse, because a
+        request cannot produce its first token until its whole KV cache has crossed the wire.
+      </p>
+      <p>
+        Drag <Code>KV transfer</Code> to see how directly that cost lands. At 1 tick per 512 tokens
+        the mean TTFT is 316ms; at 4 it is 456ms. The ITL win does not change at all. Every bit of
+        connector slowness is paid straight out of TTFT, which is why the choice of connector
+        matters so much in practice.
+      </p>
+
       <h2>Connectors</h2>
       <p>
-        A <strong>connector</strong> is vLLM's abstraction for moving KV between instances. The
-        example below uses <Code>SharedStorageConnector</Code> — a debugging implementation whose
-        "external server" is just the local filesystem, which makes the mechanics easy to follow.
-        Its lifecycle has five points:
+        A <Term>connector</Term> is vLLM's abstraction for moving KV between instances. The
+        example below uses <Code>SharedStorageConnector</Code>, a debugging implementation whose
+        "external server" is just the local filesystem — which makes the mechanics easy to follow.
+        Its lifecycle has five points.
       </p>
 
       <div className="my-5 space-y-2">
@@ -343,7 +377,7 @@ def run_decode(prefill_done):
           'Disaggregation puts prefill and decode on separate instances so bursty prefill cannot inflate decode steps. That buys independent control of TTFT and ITL.',
           "The cost is shipping each request's KV cache between machines before decode can start — which raises TTFT and makes connector performance the deciding factor in whether it pays off.",
           'The connector lifecycle is: instantiate (worker + scheduler roles) → get_num_new_matched_tokens → update_state_after_alloc → build_connector_meta → start_load_kv / wait_for_save around the forward pass.',
-          "Architecturally this is prefix caching with a remote cache: the external hit count is added to the local computed-token count before allocate_slots, reusing stage 07's machinery.",
+          "Architecturally this is prefix caching with a remote cache: the external hit count is added to the local computed-token count before allocate_slots, reusing prefix caching's machinery.",
         ]}
       />
     </StageLayout>

@@ -6,10 +6,11 @@ import {
   Callout,
   Code,
   CodeBlock,
-  SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, DistChart } from '../components/viz'
 
@@ -218,27 +219,66 @@ export default function GuidedDecoding() {
           word. The model never changed — only what it was allowed to say.
         </>
       }
+      tryThis={[
+        'Run with guiding on: 8 steps, the word Positive, no illegal characters.',
+        'Turn it off. The same scores now give Posx.',
+        'Lean the model toward Negative with guiding still off: it emits 7 on the very first step.',
+      ]}
       panel={<GuidedViz sim={sim} />}
     >
       <p>
-        Sometimes you need output that <em>parses</em> — JSON matching a schema, a SQL statement,
-        one of exactly two labels. Prompting for it and hoping is a probabilistic bet. Guided
-        decoding turns it into a guarantee, by constraining the logits at every step so that an
-        invalid token cannot be sampled at all.
+        Sometimes you need output that <em>parses</em>: JSON matching a schema, a SQL statement, one
+        of exactly two labels. Asking politely in the prompt and hoping is a bet.
+      </p>
+      <p>
+        Guided decoding turns it into a guarantee. At every step it edits the logits — the model's
+        raw scores over the vocabulary, from <StageRef n={5} /> — so that an invalid token cannot be
+        chosen at all.
       </p>
 
       <h2>Grammar becomes a state machine</h2>
       <p>
-        A grammar compiles into a finite state machine. At each decode step the FSM's current state
-        determines which tokens are legal; every other logit is set to −∞ before sampling, so its
-        probability after softmax is exactly zero. After a token is sampled, the FSM advances.
+        A grammar is compiled into a <Term>finite state machine</Term>, or FSM: a small set of
+        states, each of which knows which characters may come next. Think of it as a map with
+        one-way streets.
       </p>
       <p>
-        This handles far more than enums: regular grammars (Chomsky type-3, so any regex) all the
-        way up to context-free grammars (type-2, which covers most programming languages).
+        At each decode step the FSM's current state says which tokens are legal. Every other logit
+        is set to −∞ before sampling, which makes its probability exactly zero — not small, zero.
+        Once a token is sampled, the FSM moves to its next state.
+      </p>
+      <p>
+        This is not limited to short lists of choices. The same machinery covers anything a regular
+        expression can describe, and grammar backends extend it to the nested structures that
+        programming languages and JSON need.
       </p>
 
       <BlogFigure src="fsm.png" caption="The toy example's FSM" max={560} />
+
+      <h2>Watch it happen</h2>
+      <p>
+        The panel constrains a 16-character vocabulary to the two words{' '}
+        <Code>Positive</Code> and <Code>Negative</Code>, one character per step. Three junk
+        characters — <Code>x</Code>, <Code>#</Code> and <Code>7</Code> — are deliberately given high
+        scores, so masking has something to do.
+      </p>
+      <p>
+        Run it with <Code>Guided decoding</Code> on <Code>on</Code>. Eight steps, the word{' '}
+        <Code>Positive</Code>, zero illegal characters. Flip{' '}
+        <Code>What the model leans toward</Code> to <Code>Negative</Code> and it produces{' '}
+        <Code>Negative</Code> just as cleanly.
+      </p>
+      <p>
+        Now turn <Code>Guided decoding</Code> to <Code>off</Code> and run it again. The model gets
+        three characters in and then samples <Code>x</Code>, leaving <Code>Posx</Code>. Lean it
+        toward <Code>Negative</Code> with guiding off and it emits <Code>7</Code> on the very first
+        step.
+      </p>
+      <p>
+        The model did not change between those runs. Its scores were identical. The only difference
+        is what it was permitted to say — which is why no validator bolted on afterwards can achieve
+        the same thing. By then the token is already in the output.
+      </p>
 
       <h2>How vLLM wires it up</h2>
       <ol>
@@ -247,40 +287,44 @@ export default function GuidedDecoding() {
           the tokenizer, holding a <Code>_grammar_bitmask</Code> tensor.
         </li>
         <li>
-          When a guided request is added, its status becomes <Code>WAITING_FOR_FSM</Code> and{' '}
-          <Code>grammar_init</Code> selects a backend compiler — e.g. <Code>xgrammar</Code>.
+          When a guided request arrives, its status becomes <Code>WAITING_FOR_FSM</Code> and{' '}
+          <Code>grammar_init</Code> picks a backend compiler, such as <Code>xgrammar</Code>.
         </li>
-        <li>The grammar is compiled asynchronously.</li>
+        <li>The grammar is compiled in the background.</li>
         <li>
-          During scheduling, if compilation has finished the status flips to <Code>WAITING</Code>{' '}
-          and the id joins <Code>structured_output_request_ids</Code>; otherwise it goes to{' '}
-          <Code>skipped_waiting_requests</Code> and is retried next step.
-        </li>
-        <li>
-          After the scheduling loop, if any FSM requests are present the manager asks the backend to
-          prepare or update <Code>_grammar_bitmask</Code>.
+          During scheduling, a request whose grammar is ready flips to <Code>WAITING</Code> and
+          joins <Code>structured_output_request_ids</Code>. One that is not ready goes to{' '}
+          <Code>skipped_waiting_requests</Code> and is tried again next step.
         </li>
         <li>
-          After the forward pass produces logits, the bitmask is expanded to vocab size and
+          After the scheduling loop, the manager asks the backend to build or update{' '}
+          <Code>_grammar_bitmask</Code> for every guided request in the batch.
+        </li>
+        <li>
+          After the forward pass produces logits, the mask is expanded to vocabulary width and the
           disallowed logits are set to −∞.
         </li>
         <li>
-          After sampling, the request's FSM advances via <Code>accept_tokens</Code>.
+          After sampling, each request's FSM advances through <Code>accept_tokens</Code>.
         </li>
       </ol>
 
-      <Callout kind="key" title="Why a bitmask and not a boolean array">
+      <Callout kind="key" title="Why a bitmask and not a list of booleans">
         <p>
-          One bit per token, packed 32 tokens to an <Code>int32</Code>. For a 128k vocab that's 4k
-          integers instead of 128k booleans — and it has to be rebuilt{' '}
-          <em>every step for every guided request</em>, so the 32× saving in size and bandwidth is
-          the difference between guided decoding being cheap and being the bottleneck. It's expanded
-          back out to vocab width on the GPU right before masking.
+          The mask stores one bit per token, packed 32 tokens to an <Code>int32</Code>. For a
+          128k-token vocabulary that is 4k integers rather than 128k booleans.
         </p>
         <p>
-          With <Code>vocab_size = 32</Code> the whole mask is a single integer: <Code>101…001</Code>{' '}
-          expands to <Code>[1, 0, 1, …, 0, 0, 1]</Code>, and every position holding 0 gets its logit
-          set to −∞.
+          That 32× saving matters because the mask is rebuilt <em>every step, for every guided
+          request</em>. It is the difference between guided decoding costing almost nothing and
+          becoming the bottleneck. It gets expanded back to full width on the GPU, right before
+          masking.
+        </p>
+        <p>
+          The panel shows the whole thing as one integer, because its vocabulary is only 16 tokens
+          wide. At the first step just <Code>P</Code> and <Code>N</Code> are legal, so the mask is{' '}
+          <Code>0000000010000001</Code> — the number 129. Every 0 in there is a logit about to
+          become −∞.
         </p>
       </Callout>
 
@@ -305,28 +349,29 @@ outputs = llm.generate(prompts, sampling_params)`}
 
       <Callout kind="gotcha" title="Two costs worth knowing about">
         <p>
-          <strong>Compilation is not free.</strong> A complex grammar takes real time to compile,
-          which is why vLLM does it asynchronously and lets the request sit in{' '}
-          <Code>WAITING_FOR_FSM</Code>. A first request with a novel schema pays a TTFT penalty.
+          <strong>Compilation is not free.</strong> A complicated grammar takes real time to
+          compile, which is why vLLM does it in the background and parks the request in{' '}
+          <Code>WAITING_FOR_FSM</Code>. The first request with a brand-new schema pays for that in
+          its time to first token.
         </p>
         <p>
-          <strong>Validity is not correctness.</strong> Guided decoding guarantees the output
-          matches the grammar. It does not make the content right — a schema-valid JSON object full
-          of hallucinated values is still wrong, and now it parses cleanly, which can make it harder
-          to notice.
+          <strong>Valid is not the same as correct.</strong> Guided decoding guarantees the shape of
+          the output, nothing more. A schema-perfect JSON object full of invented values is still
+          wrong — and now it parses cleanly, which makes it easier to miss.
         </p>
         <p>
-          Most of the real complexity lives in third-party libraries like <Code>xgrammar</Code>,
-          which is responsible for producing the bit patterns from the current FSM state.
+          Most of the hard work lives in third-party libraries such as <Code>xgrammar</Code>, whose
+          job is turning the current FSM state into those bit patterns.
         </p>
       </Callout>
 
       <Takeaways
         items={[
-          'A grammar compiles to an FSM; at each step the FSM decides which tokens are legal, and everything else is set to −∞ so sampling cannot pick it. Invalid output becomes impossible, not merely unlikely.',
-          '_grammar_bitmask packs one bit per token, 32 per int32, and is rebuilt every step per guided request — that compactness is what makes it affordable at 128k vocab sizes.',
-          'Grammars are compiled asynchronously (status WAITING_FOR_FSM) because compilation is slow enough to hurt TTFT if done inline.',
-          'The guarantee is syntactic only. Schema-valid output can still be factually wrong — and it is now harder to spot.',
+          'A grammar compiles to a finite state machine. At each step the FSM decides which tokens are legal, and every other logit is set to −∞ so sampling cannot pick it. Invalid output becomes impossible rather than unlikely.',
+          'The guarantee comes from editing logits before sampling, which is why a validator applied afterwards is not equivalent — by then the wrong token has already been emitted.',
+          '_grammar_bitmask packs one bit per token, 32 per int32, and is rebuilt every step for every guided request. That compactness is what makes it affordable at a 128k vocabulary.',
+          'Grammars compile in the background (status WAITING_FOR_FSM) because compiling inline would hurt time to first token.',
+          'The guarantee is syntactic only. Schema-valid output can still be factually wrong, and it is now harder to spot.',
         ]}
       />
     </StageLayout>

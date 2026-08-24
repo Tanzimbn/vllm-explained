@@ -1,4 +1,7 @@
-import { chapters } from '../../content/roadmap'
+import { Link } from 'react-router-dom'
+
+import { chapters, stageByNumber } from '../../content/roadmap'
+import { glossaryByTerm } from '../../content/glossary'
 
 /*
  * The stage's title band, above the two-pane grid.
@@ -25,15 +28,43 @@ export default function StageHeader({ stage }) {
       <p className="m-0 max-w-[52ch] text-[17px] leading-[1.45] font-[500] text-ink-dim text-pretty">
         {stage.hook}
       </p>
+      {stage.prereq?.length > 0 && (
+        <div className="mt-5 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <span className={`${MICRO} text-neutral-600`}>Builds on</span>
+          {stage.prereq.map((n, i) => {
+            const p = stageByNumber[n]
+            return (
+              <span key={n} className="text-[13px] text-neutral-700">
+                <Link
+                  to={`/stage/${p.slug}`}
+                  className="border-b border-accent-300 text-accent-700 hover:border-accent hover:text-accent"
+                >
+                  {String(p.n).padStart(2, '0')} {p.title}
+                </Link>
+                {i < stage.prereq.length - 1 ? ',' : ''}
+              </span>
+            )
+          })}
+        </div>
+      )}
+
+      {/* The chips used to look like definitions and be inert. Each one now
+          lands on its glossary entry, which matters most for a reader who
+          arrived here from a search rather than from stage 01. */}
       <div className="mt-5 flex flex-wrap gap-2">
-        {stage.concepts.map((c) => (
-          <span
-            key={c}
-            className="border border-accent px-2 py-[3px] font-mono text-[11px] text-accent-700"
-          >
-            {c}
-          </span>
-        ))}
+        {stage.concepts.map((c) => {
+          const entry = glossaryByTerm[c]
+          const chip = 'border border-accent px-2 py-[3px] font-mono text-[11px] text-accent-700'
+          return entry ? (
+            <Link key={c} to={`/glossary#${entry.slug}`} className={`${chip} hover:bg-accent-100`}>
+              {c}
+            </Link>
+          ) : (
+            <span key={c} className={chip}>
+              {c}
+            </span>
+          )
+        })}
       </div>
     </div>
   )

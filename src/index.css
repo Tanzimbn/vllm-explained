@@ -186,6 +186,14 @@ h4 {
 }
 /* accent-700 rather than accent: the accent-to-ground pair is tuned for chrome,
    not for paragraph-size text. */
+/* The containing block for a <Term> hover panel. Anchoring the panel to the
+   paragraph rather than to the word is what keeps it on screen: it spans the
+   prose column, so it cannot run off either edge at any viewport width, and it
+   never covers the line you are reading. */
+.prose-stage p,
+.prose-stage li {
+  position: relative;
+}
 .prose-stage a {
   color: var(--color-accent-700);
   text-decoration: none;

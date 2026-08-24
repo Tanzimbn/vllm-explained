@@ -34,8 +34,32 @@ No linter or formatter is configured; match the surrounding style.
 
 ### One source of truth for structure
 
-`src/content/roadmap.js` declares chapters and stages (slug, number, title, hook, concepts, sims). It
-drives the router, prev/next, and the roadmap map page. Adding or renaming a stage means editing
+A bolded term wrapped in `<Term>` shows its glossary definition on hover and on focus. Three things
+make that work, and each is pinned by `stages.test.jsx`:
+
+- **Only term introductions are wrapped.** Bold also heads run-in paragraphs ("Prepare inputs — …").
+  Wrapping those would make the dotted underline meaningless, so the wrap list is explicit.
+- **The panel is anchored to the paragraph, not the word.** `.prose-stage p, .prose-stage li` are
+  `position: relative` and the panel spans the column with `left-0 right-0`. A panel centred on the
+  word cannot be kept on screen in CSS alone — measured in Chrome, a term opening a paragraph put
+  its panel 97px past the left edge. For the same reason the article carries no `overflow-hidden`.
+- **Hover is not the only path.** Tailwind gates `hover:` behind `@media (hover: hover)`, so on a
+  touch device hover never fires — and in plain headless Chrome it never fires either, which makes
+  the feature look broken when it is not. `group-focus-within` covers keyboard and tap. To verify
+  hover in headless, launch Chrome with
+  `--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4`.
+
+`src/content/glossary.js` defines every term the site uses — all 67 concept chips plus the jargon
+the prose leans on — keyed by the exact chip string, with the stage that introduces it. The chips in
+`StageHeader` link to `/glossary#<slug>`, and `stages.test.jsx` fails if a stage names a concept the
+glossary does not define. Definitions are the one-line reminder; the stage owns the explanation.
+
+`src/content/roadmap.js` declares chapters and stages (slug, number, title, hook, concepts, sims,
+`prereq`). It drives the router, prev/next, and the roadmap map page. Two fields serve the reader's
+path through the site rather than the routing: a stage's `prereq` lists the earlier stages it builds
+on, which `StageHeader` renders as links, and a chapter's `handoff` is the act bridge —
+`bridgeFor(slug)` returns it only on that act's last stage, and `StageLayout` renders it there with
+no page opting in. Adding or renaming a stage means editing
 **three** places, and `src/stages/stages.test.jsx` fails if they disagree:
 
 1. the `stages` array in `content/roadmap.js` (numbers must be contiguous from 1)
@@ -98,7 +122,11 @@ return (
 ```
 
 `StageLayout` (`components/layout/StageLayout.jsx`) owns the grid: prose left, the primary simulator
-**pinned sticky** right under the 99px of chrome, plus the focus toggle and prev/next. Below `lg` it
+**pinned sticky** right under the 99px of chrome, plus the focus toggle and prev/next. Every stage
+also passes `tryThis` — two or three numbered experiments naming exact knob settings, rendered
+inside the pane under the transport. That is for focus mode, which takes the prose out of flow
+entirely; `stages.test.jsx` requires one per stage and rejects an entry that names no setting or
+figure. Below `lg` it
 stacks and CSS `order` puts the pane above the body prose. Several pages say "the panel on the
 right" in their copy, and `stages.test.jsx` asserts the structure — so a stage's primary sim belongs
 in `panel`, never inline.
@@ -112,7 +140,8 @@ still identifies its stage.
 `Benchmarking.jsx` have one, and a test pins that list.
 
 Shared chrome is in `src/components/ui/index.jsx` (SimPanel, SimFrame, StepControls, Knob, Callout,
-CodeBlock, BlogFigure, StatRow + StatTile, Badge, Legend, Takeaways); shared visualizations in
+CodeBlock, BlogFigure, StatRow + StatTile, Badge, Legend, Takeaways, TryThis, StageRef,
+ActBridge); shared visualizations in
 `src/components/viz/index.jsx` (BlockGrid, QueueLane, TokenStrip, Timeline, DistChart, LineChart,
 NodeGraph, MeterBar, StackedBar).
 
@@ -145,6 +174,41 @@ Rules worth knowing before editing:
 `<BlogFigure src="kv_cache_blocks.png">` takes a bare filename (resolved against `BASE_URL`). A test
 greps stage files for `src="…png"` literals and asserts the file exists in `public/img/`, so keep the
 prop a literal string rather than a variable.
+
+## How the prose is written
+
+The reader is assumed to know transformers and attention and **nothing** about inference serving.
+That is the whole audience: someone competent who has never run a server. Stage 02
+(`EngineAnatomy.jsx`) is the reference voice — match it.
+
+- **One idea per sentence.** If a sentence has two clauses doing different jobs, it is two
+  sentences. `stages.test.jsx` measures the *rendered* article and holds every stage to a
+  `READABILITY_BUDGET` — an average and a longest-sentence ceiling. It is a ratchet: rewriting a
+  stage lowers its two numbers, and nothing may raise them. The bar to aim for is the one
+  `engine-anatomy` already meets — average under 18 words, no sentence over 35.
+- **Gloss every identifier in English at first use on the page.** `<Code>free_block_queue</Code>` is
+  not self-explanatory — say what it holds. Same for every acronym: HBM, DAG, FSM, EOS, VRAM, TP/PP.
+  A term is "introduced" by the lowest-numbered stage that names it.
+- **Why before what.** Open a section with the problem the part solves, then the mechanism. "The
+  scheduler has picked who runs; those requests now have to become one tensor" beats "the model
+  executor's `execute_model` delegates to the `Worker`".
+- **Never forward-reference a mechanism you have not earned.** Name the consequence in the earlier
+  stage and let the later stage own the mechanism; link with `<StageRef>` so the reader can jump.
+- **Cross-stage references are links, never prose.** Write `<StageRef n={7} />`, not "stage 07" —
+  the text comes from `roadmap.js`, and a test fails on any bare `stage NN` left in a stage file.
+- **Never open a sentence with something lowercase.** Not a bare `<Code>slot_mapping</Code>`, not a
+  short-form `<StageRef>` (which renders "stage 06"). Rephrase, or use `<StageRef n={6} title />`,
+  which renders "Chunked prefill (stage 06)". It reads better, and the readability check treats a
+  lowercase start as a continuation of the previous sentence.
+- **An analogy goes before the mechanism, and only where one is needed.** `<Callout kind="intuition">`
+  is for a way in — a bandwidth-bound step, paging, an unpadded batch, a chained hash,
+  draft-and-verify, TP against PP. Six stages have one and a test pins that list; a mandatory
+  analogy on a stage that explains itself is padding. It is the one callout kind distinguished by a
+  fill rather than a shape, so its label always names itself.
+- **Bind paragraphs to the simulator with specific actions.** "Set `block_size` to 4 and step six
+  times; watch row 3 jump" beats "watch the panel on the right".
+- **Derive a number in the prose before it appears in a `<Takeaways>`.** Takeaways recap; they do
+  not introduce.
 
 ## Tests carry the site's factual claims
 

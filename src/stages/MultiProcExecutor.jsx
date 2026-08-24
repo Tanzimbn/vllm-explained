@@ -8,9 +8,11 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, LineChart } from '../components/viz'
 
@@ -246,34 +248,67 @@ export default function MultiProcExecutor() {
           communication. This is the entire reason TP isn't simply set as high as you have GPUs.
         </>
       }
+      tryThis={[
+        'Step through at TP=8: one broadcast, then compute and all-reduce per layer, then a collect.',
+        'Compare TP=4 and TP=8 at all-reduce cost 1. Both give 2.0× — the extra four GPUs buy nothing.',
+        'Set All-reduce cost to 0 for perfect 8× scaling, then to 4, where TP=8 comes out slower than one GPU.',
+      ]}
       panel={<TpViz sim={sim} />}
     >
       <p>
-        Everything so far assumed the model fits on one GPU. When it doesn't, you shard it — and the
-        engine needs an orchestration layer to drive several worker processes as if they were one.
-        That layer is <Code>MultiProcExecutor</Code>, and the remarkable thing about it is how
+        Everything so far assumed the model fits on one GPU. When it does not, you cut it into
+        pieces and spread it across several — and the engine needs something to drive those several
+        worker processes as though they were one.
+      </p>
+      <p>
+        That something is <Code>MultiProcExecutor</Code>. The remarkable thing about it is how
         little the rest of the engine notices.
       </p>
 
       <h2>Two ways to split a model</h2>
       <p>
-        <strong>Tensor parallelism (TP)</strong> shards individual weight matrices across GPUs, so
-        every GPU holds a slice of every layer and they cooperate on each one. That cooperation
-        means an all-reduce after each sharded block — a lot of communication, which is why TP is
-        normally kept <em>within</em> a node where interconnect bandwidth is high.
+        <Term>Tensor parallelism</Term>, or TP, cuts the individual weight matrices up. Every
+        GPU holds a slice of every layer, and they work on each layer together.
       </p>
       <p>
-        <strong>Pipeline parallelism (PP)</strong> assigns whole layers to different GPUs, so
-        activations are passed forward once per stage boundary. It communicates far less data than
-        TP, which makes it the option for spanning nodes — but it introduces pipeline bubbles.
+        Working together has a price. Each GPU computes a partial answer from its own slice, so
+        after every sharded block they all have to swap partials and add them up. That exchange is
+        an <Term>all-reduce</Term>, and there is one per block, every layer, every step. It is a
+        lot of traffic, which is why TP normally stays <em>inside</em> one machine where the links
+        between GPUs are fastest.
       </p>
+      <p>
+        <Term>Pipeline parallelism</Term>, or PP, cuts by layer instead. GPU 0 holds the first
+        few layers, GPU 1 the next few, and so on, so data is handed forward once per boundary.
+      </p>
+      <p>
+        That is far less traffic, which makes PP the way to span machines. The cost is a{' '}
+        <Term>bubble</Term>. While GPU 0 works on the first layers, the GPUs holding later
+        layers have nothing to do yet, and they idle again at the end of the batch.
+      </p>
+
+      <Callout kind="intuition" title="Everyone on every page, or an assembly line">
+        <p>
+          Tensor parallelism is eight people translating one page, each taking a column. Fast. But
+          after every page they must compare notes to agree. That is the all-reduce, and it is why
+          they sit in one room.
+        </p>
+        <p>
+          Pipeline parallelism is an assembly line. Person one does the first ten pages, then hands
+          the manuscript on. Almost no conferring, so they can be in different buildings. But nobody
+          further down the line has anything to do until the work reaches them.
+        </p>
+      </Callout>
 
       <Callout kind="note" title="The usual ordering">
         <p>
-          Intranode bandwidth is significantly higher than internode, so TP is generally preferred —
-          fill a node with TP first, then reach for PP across nodes if the model still doesn't fit.
-          (Expert parallelism for MoE models and sequence parallelism also exist; TP and PP are what
-          you meet in practice for a standard transformer.)
+          Links inside a machine are much faster than links between machines. So the usual recipe is
+          to fill one machine with TP first, then reach for PP across machines only if the model
+          still does not fit.
+        </p>
+        <p>
+          Two more schemes exist — expert parallelism for mixture-of-experts models, and sequence
+          parallelism — but TP and PP are what you meet for a standard transformer.
         </p>
       </Callout>
 
@@ -283,12 +318,40 @@ export default function MultiProcExecutor() {
         max={560}
       />
 
+      <h2>Watch it happen</h2>
+      <p>
+        Step the panel at <Code>TP=8</Code> and you get nine ticks: one broadcast to wake the
+        workers, then compute and all-reduce for each of the three layers, then a collect. That
+        alternation is the whole shape of a tensor-parallel forward pass.
+      </p>
+      <p>
+        Now watch the efficiency number as you change <Code>Tensor parallel size</Code>, with the
+        all-reduce cost left at 1. Two GPUs give a speedup of 1.6× — 80% efficient. Four give 2.0×,
+        which is 50%. Eight give 2.0× as well.
+      </p>
+      <p>
+        Read that last pair again. Going from four GPUs to eight doubled the hardware and bought{' '}
+        <em>nothing</em>, because the compute each worker does halved while the all-reduce it must
+        take part in got bigger.
+      </p>
+      <p>
+        Set <Code>All-reduce cost per layer</Code> to 0 and the same sweep scales perfectly: 8 GPUs,
+        8× faster, 100% efficiency all the way. Communication is the entire story. Push the cost to
+        4 instead and <Code>TP=8</Code> lands at 0.62× — eight GPUs, slower than one.
+      </p>
+      <p>
+        This is why TP is not simply set as high as your GPU count. Compute per worker falls as{' '}
+        <Code>1/TP</Code> while the all-reduce grows with the group, so past some point extra GPUs
+        are bought mainly to pay for extra talking.
+      </p>
+
       <Card className="my-6 p-4">
         <ScalingChart params={sim.params} />
         <p className="mt-2 text-[0.75rem] leading-relaxed text-ink-faint">
-          Speedup against the dashed ideal, at several all-reduce costs. The curves bend and then
-          flatten — and at high communication cost they eventually bend <em>down</em>. Amdahl's law,
-          with the interconnect as the serial part.
+          Speedup against the dashed ideal, at several all-reduce costs. The curves bend, then
+          flatten, and at high communication cost they eventually bend <em>down</em>. This is
+          Amdahl's law: the part you cannot parallelise sets a ceiling on the whole thing, and here
+          the interconnect is that part.
         </p>
       </Card>
 
@@ -299,19 +362,20 @@ export default function MultiProcExecutor() {
           implemented over shared memory.
         </li>
         <li>
-          The constructor loops over <Code>world_size</Code> (TP=8 ⇒ 8) and spawns a daemon process
-          per rank via <Code>WorkerProc.make_worker_process</Code>, creating a reader and writer
-          pipe for each.
+          The constructor loops over <Code>world_size</Code> — 8, at TP=8 — and spawns one
+          background process per rank via <Code>WorkerProc.make_worker_process</Code>. Each gets a
+          reader and a writer pipe.
         </li>
         <li>
           Each new process runs <Code>WorkerProc.worker_main</Code>, instantiating a worker through
-          the very same "init device / load model / initialize KV cache" procedures from stage 02 —
-          now with TP-partitioned weights.
+          the very same "init device / load model / initialize KV cache" procedures from{' '}
+          <StageRef n={2} /> — now with TP-partitioned weights.
         </li>
         <li>
-          Each worker works out whether it is the <strong>driver</strong> (rank 0 in the TP group)
-          or a regular worker, and sets up two queues: <Code>rpc_broadcast_mq</Code> (shared with
-          the parent, for receiving work) and its own <Code>worker_response_mq</Code> (for replies).
+          Each worker works out whether it is the <Term>driver</Term> — rank 0 in the TP
+          group — or a regular worker. It then sets up two queues: <Code>rpc_broadcast_mq</Code>,
+          shared with the parent, for receiving work; and its own <Code>worker_response_mq</Code>{' '}
+          for replies.
         </li>
         <li>
           During init each child sends its <Code>worker_response_mq</Code> handle to the parent over
@@ -345,7 +409,7 @@ export default function MultiProcExecutor() {
           </li>
         </ul>
         <p>
-          The scheduler, KV-cache manager, and everything in stages 03–10 are untouched. That's why
+          The scheduler, the KV-cache manager and every feature so far are untouched. That is why
           this stage arrives so late and is so short: sharding is a swap behind one seam.
         </p>
       </Callout>
@@ -365,8 +429,8 @@ export default function MultiProcExecutor() {
       <Takeaways
         items={[
           'TP shards weight matrices and needs an all-reduce per layer, so it stays inside a node; PP splits layers, communicates far less, and is how you span nodes.',
-          'MultiProcExecutor spawns one daemon process per rank, hands out a shared-memory rpc_broadcast_mq for work and a per-worker worker_response_mq for replies, then broadcasts non-blocking and collects from the designated output rank.',
-          'Compute per worker scales as 1/TP while all-reduce cost grows with the group size, so parallel efficiency falls as TP rises — and on a slow interconnect a wider TP group can be outright slower. Higher TP is a decision about the interconnect, not just about VRAM.',
+          'MultiProcExecutor spawns one process per rank. Work goes out over a shared-memory rpc_broadcast_mq without blocking, and each worker replies on its own worker_response_mq; the parent collects from the designated output rank.',
+          'Compute per worker scales as 1/TP while the all-reduce grows with the group size, so parallel efficiency falls as TP rises. On slow links a wider TP group can be outright slower than a narrow one, which makes TP a decision about the interconnect and not only about VRAM.',
           'EngineCore still just calls execute_model. Every stage before this one keeps working unchanged, which is why scaling up is a late, small chapter rather than a rewrite.',
         ]}
       />

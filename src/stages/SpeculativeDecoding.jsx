@@ -8,9 +8,11 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, DistChart, LineChart } from '../components/viz'
 
@@ -223,62 +225,123 @@ export default function SpeculativeDecoding() {
           character of the technique: it trades throughput risk for zero quality risk.
         </>
       }
+      tryThis={[
+        'Let it run a few hundred rounds: about 62% of drafts accepted, roughly 3.5 tokens a round, 2.5× overall.',
+        'Drag draft agreement to 0 and keep going. The speedup collapses and the histogram still matches the target exactly.',
+        'At agreement 0.2, sweep k: the peak is near 3, and k = 7 is worse than k = 3.',
+      ]}
       panel={<SpecViz sim={sim} />}
     >
       <p>
-        Decode is memory-bandwidth-bound: every step streams the entire model from HBM to produce
-        one token. The arithmetic units are mostly idle. Speculative decoding exploits that slack —
-        if you're going to move all those weights anyway, you may as well check several candidate
-        tokens in the same pass.
+        Decode is limited by memory bandwidth, as <StageRef n={1} /> showed: every step drags the
+        whole model out of HBM to produce one token, and the arithmetic units mostly idle while it
+        happens.
       </p>
+      <p>
+        Speculative decoding spends that idle capacity. If the weights are being moved anyway, you
+        may as well check several candidate tokens in the same trip.
+      </p>
+
+      <Callout kind="intuition" title="A junior drafts, a senior signs off">
+        <p>
+          A junior writes a paragraph quickly and cheaply. A senior reads it in one pass and marks
+          where they would have written something else, stopping at the first real disagreement.
+          Everything above that line stands.
+        </p>
+        <p>
+          The output is whatever the senior would have written on their own, because the senior
+          checked every word of it. A bad junior costs you rewrites — never the quality of what
+          finally ships.
+        </p>
+      </Callout>
 
       <h2>Draft, verify, and be careful about it</h2>
       <p>
-        A small, cheap <strong>draft model</strong> proposes <Code>k</Code> tokens. The large{' '}
-        <strong>target model</strong> then runs <em>once</em> over context + those <Code>k</Code>{' '}
-        tokens, producing probabilities for all <Code>k</Code> positions plus one extra — so{' '}
-        <Code>k+1</Code> candidates from a single expensive pass.
+        A small, cheap <Term>draft model</Term> guesses the next <Code>k</Code> tokens. The big{' '}
+        <Term>target model</Term> then runs <em>once</em> over the context plus those guesses.
       </p>
-      <p>Then, left to right over the drafts:</p>
+      <p>
+        One pass gives probabilities at all <Code>k</Code> guessed positions, plus one position
+        beyond them. So a single expensive pass yields opinions about <Code>k+1</Code> tokens.
+      </p>
+      <p>Then the guesses are checked, left to right:</p>
       <ul>
         <li>
-          if the target's probability for the drafted token is <strong>≥</strong> the draft's,
-          accept it;
+          if the target model's probability for the guessed token is <strong>at least</strong> the
+          draft's, accept it;
         </li>
         <li>
-          otherwise accept it with probability <Code>p_target(token) / p_draft(token)</Code>;
+          otherwise accept it with probability <Code>p_target(token) / p_draft(token)</Code> — the
+          more the draft overreached, the likelier the rejection;
         </li>
         <li>
           stop at the first rejection, or accept all <Code>k</Code>.
         </li>
       </ul>
       <p>
-        If a rejection happens, the replacement token is sampled from a{' '}
-        <strong>rebalanced residual</strong> distribution:{' '}
-        <Code>normalize(max(0, p_target − p_draft))</Code>. If nothing was rejected, the{' '}
-        <Code>(k+1)</Code>th token comes free from the target's own distribution, which was already
-        computed.
+        When a guess is rejected, its replacement is drawn from what is left of the target's opinion
+        after removing what the draft already offered: <Code>normalize(max(0, p_target − p_draft))</Code>.
+      </p>
+      <p>
+        That is less cryptic than it looks. In the panel the target gives{' '}
+        <Code>the</Code> a probability of 0.42 while the draft only offers 0.29, so{' '}
+        <Code>the</Code> keeps weight of 0.13 in the residual. The draft is over-eager about{' '}
+        <Code>a</Code> — 0.29 against the target's 0.21 — so <Code>a</Code> is clamped to zero.
+      </p>
+      <p>
+        The replacement is sampled only from where the target wanted <em>more</em> than the draft
+        was offering. That is what keeps the arithmetic honest. And if nothing was rejected at all,
+        the <Code>(k+1)</Code>th token comes free, straight from the target's own distribution,
+        which was computed in the same pass.
       </p>
 
       <Callout kind="key" title="This is exact, not approximate">
         <p>
-          Although a small model proposes the candidates, the accept/reject rule guarantees the
-          resulting sequence is distributed <em>exactly</em> as if you had sampled token by token
-          from the large model. Speculative decoding is statistically equivalent to standard
-          autoregressive decoding — the draft model influences <em>speed</em>, never the output
-          distribution. A bad draft costs you throughput, not quality.
+          A small model proposes the candidates, yet the accept-and-reject rule guarantees that the
+          resulting text is distributed <em>exactly</em> as if you had sampled from the large model
+          one token at a time.
+        </p>
+        <p>
+          Speculative decoding is statistically indistinguishable from ordinary decoding. The draft
+          model affects <em>speed</em> and never the output distribution. A bad draft costs you
+          throughput, not quality.
         </p>
       </Callout>
 
       <BlogFigure src="specdec_pt1.png" caption="The drafting stage" />
       <BlogFigure src="specdec_pt2.png" caption="Verification and rejection sampling" />
 
+      <h2>Watch it happen</h2>
+      <p>
+        The panel runs one full speculation round per tick, with <Code>k</Code> at 4 and the draft
+        agreeing with the target 60% of the time. Let it run a few hundred rounds.
+      </p>
+      <p>
+        About 62% of drafted tokens are accepted, which works out to roughly 3.5 tokens emitted per
+        round instead of 1. After paying for the drafts, that is a speedup of about 2.5×.
+      </p>
+      <p>
+        Now watch the purple histogram settle onto the blue target distribution. It does that at{' '}
+        <em>any</em> agreement setting, including 0. Drag <Code>draft agreement</Code> to the floor
+        and the speedup collapses while the distribution stays exactly right. That is the character
+        of the whole technique: it risks throughput and never quality.
+      </p>
+
       <h2>Why k has a sweet spot</h2>
       <p>
-        Acceptance compounds: the chance of getting the <Code>j</Code>th draft token accepted falls
-        off roughly geometrically, so each additional speculative token contributes less than the
-        last — while its draft cost is paid in full every round. Past some <Code>k</Code> you are
-        buying tokens you'll usually throw away.
+        Acceptance compounds. Getting the second guess accepted needs the first to be accepted too,
+        so the chance of reaching the <Code>j</Code>th guess falls off like compound interest in
+        reverse. Each extra speculative token contributes less than the one before it.
+      </p>
+      <p>
+        Its cost, though, is paid in full every round whether it is used or not. Past some{' '}
+        <Code>k</Code> you are buying tokens you will usually throw away.
+      </p>
+      <p>
+        The panel will show you both ends of that. Set <Code>draft agreement</Code> to 0.2 and sweep{' '}
+        <Code>k</Code>: the speedup peaks around <Code>k = 3</Code> at about 1.8× and then{' '}
+        <em>falls</em> to 1.6× by <Code>k = 7</Code>. Set agreement to 0.9 and the same sweep climbs
+        all the way to 4× at <Code>k = 7</Code> — the sweet spot has moved off the end of the knob.
       </p>
 
       <Card className="my-5 p-4">
@@ -324,7 +387,8 @@ outputs = llm.generate(prompts, sampling_params)`}
 
       <h2>How it lands in the engine</h2>
       <p>
-        The setup happens in the two worker procedures from stage 02: <strong>init device</strong>{' '}
+        The setup happens in the two worker procedures from <StageRef n={2} />:{' '}
+        <strong>init device</strong>{' '}
         creates the drafter (e.g. <Code>NgramProposer</Code>) and a <Code>rejection_sampler</Code>{' '}
         (partly written in Triton), and <strong>load model</strong> loads the draft weights — a
         no-op for n-gram. Then per request:
@@ -338,9 +402,9 @@ outputs = llm.generate(prompts, sampling_params)`}
           store them in <Code>request.spec_token_ids</Code>;
         </li>
         <li>
-          on the next step, add <Code>len(spec_token_ids)</Code> to the request's "new tokens" count
-          so <Code>allocate_slots</Code> reserves enough KV blocks — this is exactly the "not always
-          1" from stage 04;
+          on the next step, add <Code>len(spec_token_ids)</Code> to the request's "new tokens" count,
+          so that <Code>allocate_slots</Code> reserves enough KV blocks. This is exactly the "not
+          always 1" from <StageRef n={4} />;
         </li>
         <li>
           copy the drafts into <Code>input_batch.token_ids_cpu</Code> to form context + draft;
@@ -357,12 +421,14 @@ outputs = llm.generate(prompts, sampling_params)`}
 
       <Callout kind="gotcha" title="It helps latency, and can hurt throughput">
         <p>
-          Speculation spends spare compute to shorten a single request's wall-clock time. But under
-          heavy load that compute isn't spare — it's being used to batch other users' decodes. At
-          high batch sizes the GPU is already compute-bound (stage 13's roofline), so verifying
-          throwaway drafts competes with real work and aggregate throughput can drop. Speculative
-          decoding is a latency optimization for lightly-loaded or latency-critical serving, not a
-          free win everywhere.
+          Speculation spends spare compute to shorten one request's wall-clock time. Under heavy
+          load, though, that compute is not spare. It is busy batching other people's decodes.
+        </p>
+        <p>
+          At high batch sizes the GPU is already compute-bound, as the roofline in{' '}
+          <StageRef n={13} /> shows. Verifying drafts that get thrown away then competes with real
+          work, and total throughput can fall. Speculative decoding is a latency optimisation for
+          lightly loaded or latency-critical serving, not a free win everywhere.
         </p>
         <p>
           Also note the KV cost: <Code>allocate_slots</Code> must reserve blocks for tokens that may

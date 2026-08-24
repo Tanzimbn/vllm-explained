@@ -8,9 +8,11 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, MeterBar } from '../components/viz'
 
@@ -188,25 +190,40 @@ export default function DistributedServing() {
       ]}
       simFooter={
         <>
-          Switch between <Code>vLLM score</Code>, <Code>round-robin</Code>, and <Code>random</Code>{' '}
-          at a high cost skew. Round-robin distributes request <em>counts</em> perfectly and load
-          terribly — it cannot see that it just handed E1 a request four times longer than the last.
-          Watch the mean-imbalance and completion-spread numbers diverge.
+          Switch between <Code>vLLM score</Code>, <Code>round-robin</Code> and{' '}
+          <Code>random</Code>, and watch <strong>mean imbalance</strong>. At zero cost skew the
+          three are close, because counting requests is a fine proxy for counting work. Raise the
+          skew and the arrival rate and they separate hard: round-robin shares out request{' '}
+          <em>counts</em> perfectly and cannot see that it just handed E1 a request ten times longer
+          than the last.
         </>
       }
+      tryThis={[
+        'At Request-cost skew 0, round-robin (0.81) beats vLLM score (0.89). Counting requests is enough when they are identical.',
+        'Set skew to 10 and Arrivals per step to 5. Score holds at 1.07 while round-robin reaches 2.60 and random 9.15.',
+      ]}
       panel={<LbViz sim={sim} />}
     >
       <p>
-        We can now run a model as large as the hardware allows. The remaining step is to{' '}
-        <em>scale out</em>: replicate the whole engine (data parallelism), put one or more API
-        servers in front, and add just enough coordination to route traffic sensibly.
+        We can now run a model as big as the hardware allows. What is left is to scale{' '}
+        <em>out</em>. Run several copies of the whole engine, put an API server in front of them,
+        and add just enough coordination to send each request somewhere sensible.
+      </p>
+      <p>
+        Running several complete copies is <Term>data parallelism</Term>, or DP. It is different
+        from the splitting in <StageRef n={11} />: there, one model was cut across GPUs because it
+        did not fit. Here the model already fits, and we simply want more of it.
       </p>
 
       <h2>A concrete deployment</h2>
       <p>
-        Two H100 nodes, four vLLM engines, model requiring TP=4. That's TP=4 × DP=4 = 16 GPUs, two
-        replicas per node. One node runs headless — engines only, no API server. The other runs the
-        same engines <em>plus</em> the frontend.
+        Two H100 machines, four vLLM engines, and a model that needs TP=4. That is TP=4 × DP=4 = 16
+        GPUs, two engine copies per machine.
+      </p>
+      <p>
+        One machine runs <Term>headless</Term> — engines only, no API server, nothing listening
+        for HTTP. The other runs the same two engines <em>plus</em> the frontend that users actually
+        talk to.
       </p>
 
       <BlogFigure
@@ -257,12 +274,12 @@ vllm serve <model-name> \\
         <li>initialize the DP group (e.g. NCCL backend);</li>
         <li>
           initialize the <Code>EngineCore</Code> with a <Code>MultiProcExecutor</Code> — the TP=4
-          machinery from stage 11;
+          machinery from <StageRef n={11} />;
         </li>
         <li>
-          start an <strong>input</strong> daemon thread and an <strong>output</strong> daemon
-          thread, then wait on a <Code>ready_event</Code> until all input threads across all four
-          processes (spanning both nodes) have finished the handshake;
+          start a background <strong>input</strong> thread and a background{' '}
+          <strong>output</strong> thread. Then wait on a <Code>ready_event</Code> until every input
+          thread, across all four processes on both machines, has finished its handshake;
         </li>
         <li>
           send a "ready" message to the frontend with metadata such as <Code>num_gpu_blocks</Code>;
@@ -277,9 +294,9 @@ vllm serve <model-name> \\
         </p>
         <p>
           <strong>Main thread</strong> — wakes on <Code>input_queue.get(...)</Code>, feeds the
-          request to the engine, and calls <Code>engine_core.step()</Code> repeatedly — the same
-          schedule/forward/postprocess loop from stage 02, now with <Code>MultiProcExecutor</Code>{' '}
-          underneath — pushing results to <Code>output_queue</Code>.
+          request to the engine, then calls <Code>engine_core.step()</Code> over and over, pushing
+          results to <Code>output_queue</Code>. That is the same schedule, forward pass, postprocess
+          loop from <StageRef n={2} />, now with <Code>MultiProcExecutor</Code> underneath.
         </p>
         <p>
           <strong>Output thread</strong> — wakes on <Code>output_queue.get(...)</Code>, sends
@@ -294,11 +311,15 @@ vllm serve <model-name> \\
 
       <h2>The frontend, and the routing decision</h2>
       <p>
-        The API server node instantiates an <Code>AsyncLLM</Code> — an asyncio wrapper around the
-        engine — which creates a <Code>DPLBAsyncMPClient</Code> (data-parallel, load-balancing,
-        asynchronous, multiprocessing client). <Code>launch_core_engines</Code> creates the ZMQ
-        handshake addresses, spawns a <Code>DPCoordinator</Code> process, and creates a{' '}
-        <Code>CoreEngineProcManager</Code> just like the headless node.
+        The API server node builds an <Code>AsyncLLM</Code>, a wrapper that lets the engine be
+        driven from asynchronous code. That in turn creates a <Code>DPLBAsyncMPClient</Code> — the
+        engine core client from <StageRef n={2} />, in its full form: data-parallel,
+        load-balancing, asynchronous, multiprocessing.
+      </p>
+      <p>
+        Then <Code>launch_core_engines</Code> sets up the socket addresses for the handshake, spawns
+        a <Code>DPCoordinator</Code> process, and creates a <Code>CoreEngineProcManager</Code> just
+        like the headless node did.
       </p>
       <p>
         The <Code>DPCoordinator</Code> sits between frontend and backend. It periodically sends
@@ -314,10 +335,37 @@ vllm serve <model-name> \\
 
       <CodeBlock
         lang="python"
-        caption="Queued work is weighted 4× a running request, because a queued request hasn't started producing anything yet."
+        caption="Queued work is weighted 4× a running request, because a queued request has not started producing anything yet."
         code={`score = len(waiting) * 4 + len(running)
 chosen = min(engines, key=score)`}
       />
+
+      <h2>Watch it happen</h2>
+      <p>
+        The panel runs four engine replicas and lets you swap the routing rule. Its main readout is{' '}
+        <strong>mean imbalance</strong>: on average, how unevenly queued work is spread across the
+        four.
+      </p>
+      <p>
+        Start with <Code>Request-cost skew</Code> at 0, so every request costs the same, and{' '}
+        <Code>Routing</Code> on <Code>round-robin</Code>. Imbalance sits around 0.8.{' '}
+        <Code>vLLM score</Code> gives 0.89 — very slightly <em>worse</em>.
+      </p>
+      <p>
+        That is not a bug, it is the honest answer. When every request is identical, counting
+        requests is already a perfect proxy for counting work, and round-robin counts perfectly.
+      </p>
+      <p>
+        Now turn <Code>Request-cost skew</Code> up to 10 and <Code>Arrivals per step</Code> to 5.
+        Round-robin degrades to 2.60 and <Code>random</Code> to 9.15, while <Code>vLLM score</Code>{' '}
+        barely moves, at 1.07.
+      </p>
+      <p>
+        That is the whole case for load-aware routing. Round-robin still shares out request{' '}
+        <em>counts</em> perfectly; it just cannot see that the request it handed to E1 will run ten
+        times longer than the last one. Score-based routing looks at what each engine is actually
+        holding, so uneven costs stop mattering.
+      </p>
 
       <h2>The full request lifecycle</h2>
       <Card className="my-5 p-4">
@@ -364,12 +412,15 @@ chosen = min(engines, key=score)`}
           metrics.
         </p>
         <p>
-          <strong>Dummy steps.</strong> If <em>any</em> DP replica has work, <em>all</em> replicas
-          execute a forward step — idle ones run a dummy step to participate in required
-          synchronization points, so they never block the busy replica. Strictly this is only
-          necessary for MoE models, where expert layers form an EP/TP group while attention stays
-          DP; it's currently always done under DP because non-MoE built-in DP has limited use anyway
-          (you could just run independent vLLMs behind a normal load balancer).
+          <strong>Dummy steps.</strong> If <em>any</em> replica has work, <em>every</em> replica
+          runs a forward step. The idle ones run a fake one purely to take part in the
+          synchronisation points the others are waiting at, so they never hold up the busy replica.
+        </p>
+        <p>
+          Strictly this is only needed for mixture-of-experts models, where the expert layers form
+          one communication group while attention stays data-parallel. It is currently done under
+          data parallelism always, because plain non-MoE DP has limited use anyway — for that you
+          could just run independent vLLMs behind an ordinary load balancer.
         </p>
         <p>
           Adding more API servers needs nothing special: load balancing then happens at the

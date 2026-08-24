@@ -57,8 +57,16 @@ export function baseLogits(state, p) {
     let l = 1.6 * rand(SEED, state.pos, i, 5) * 4 - 1
     // nudge the intended branch so the walk goes somewhere sensible
     const target = WORDS[p.sentiment === 'positive' ? 0 : 1]
-    if (state.pos < target.length && tok === target[state.pos]) l += 3.2
-    if (tok === 'x' || tok === '#' || tok === '7') l += 2.4 // tempting garbage
+    /*
+     * Both bonuses have to clear the random term's own spread (6.4) to mean
+     * anything. At +3.2 the nudge lost to noise often enough that choosing
+     * "Negative" still produced "Positive" — a labelled knob that did nothing.
+     * The junk bonus is set just below the nudge so that masking is what
+     * decides the outcome: with guiding on the intended word always wins, and
+     * with guiding off the junk is a real contender at every character.
+     */
+    if (state.pos < target.length && tok === target[state.pos]) l += 6.5
+    if (tok === 'x' || tok === '#' || tok === '7') l += 6.0 // tempting garbage
     return l
   })
 }

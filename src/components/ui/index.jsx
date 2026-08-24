@@ -1,4 +1,8 @@
 import { useEffect } from 'react'
+import { Link } from 'react-router-dom'
+
+import { bridgeFor, stageByNumber } from '../../content/roadmap'
+import { lookupTerm } from '../../content/glossary'
 
 /*
  * Shared chrome, in the Modernist language: square corners, 2px rules between
@@ -25,24 +29,80 @@ const CALLOUT_STYLES = {
   note: { label: 'Note' },
   key: { label: 'Key idea' },
   gotcha: { label: 'Gotcha' },
+  intuition: { label: 'Intuition' },
 }
 
 /**
  * `key` gets the accent bar — the system's way of marking the one idea a section
- * turns on. `note` and `gotcha` get the 2px box.
+ * turns on. `note` and `gotcha` get the 2px box. `intuition` gets the box plus a
+ * flat accent-100 fill, because it is a different *kind* of paragraph rather
+ * than a more important one: an analogy, offered before the mechanism, that the
+ * reader is free to skip. Flat fill, not tinted glass — the system's rule holds.
+ *
+ * The label carries the distinction too, so the kind is never hue alone.
  */
 export function Callout({ kind = 'note', title, children }) {
   const s = CALLOUT_STYLES[kind] ?? CALLOUT_STYLES.note
   const bar = kind === 'key'
+  const box = kind === 'intuition' ? 'border-2 border-edge bg-accent-100 p-5' : 'border-2 border-edge p-5'
   return (
-    <div
-      className={bar ? 'my-7 border-l-4 border-accent pl-[18px]' : 'my-7 border-2 border-edge p-5'}
-    >
-      <div className={`${MICRO} mb-2 text-accent-700`}>{title ?? s.label}</div>
+    <div className={bar ? 'my-7 border-l-4 border-accent pl-[18px]' : `my-7 ${box}`}>
+      {/* `intuition` is the one kind distinguished by a fill rather than by
+          shape, so its label always names itself even when a title is given —
+          otherwise the kind would be carried by hue alone, which the design
+          system forbids. */}
+      <div className={`${MICRO} mb-2 text-accent-700`}>
+        {kind === 'intuition' && title ? `${s.label} · ${title}` : (title ?? s.label)}
+      </div>
       <div className="text-[15px] leading-[1.6] text-ink-dim [&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0">
         {children}
       </div>
     </div>
+  )
+}
+
+/**
+ * A bolded term that shows its glossary definition on hover.
+ *
+ * Bold in the prose does two jobs: introducing a term, and heading a run-in
+ * paragraph ("Prepare inputs — …"). Only the first kind is wrapped in <Term>, so
+ * the dotted underline is a reliable promise: underlined means there is a
+ * definition behind it. A phrase with no glossary entry falls back to a plain
+ * <strong> rather than a broken affordance, and `stages.test.jsx` fails on one,
+ * so the fallback should never actually be reached.
+ *
+ * CSS-only, on hover *and* focus, so it needs no state, works with the keyboard,
+ * and survives the render tests (which have no DOM and run no effects). The
+ * panel is flat with a 2px rule and no radius or shadow, like every other
+ * surface in the system.
+ */
+export function Term({ children }) {
+  const entry = lookupTerm(children)
+  if (!entry) return <strong>{children}</strong>
+
+  return (
+    // No `relative` here on purpose: the panel is positioned against the
+    // paragraph (see `.prose-stage p` in index.css), not against the word. A
+    // panel centred on the word cannot be kept on screen in CSS alone — a term
+    // opening a paragraph pushed it ~100px off the left edge — and a term
+    // introduction is exactly the thing that tends to open a paragraph.
+    <span className="group">
+      <strong
+        tabIndex={0}
+        aria-describedby={`def-${entry.slug}`}
+        className="cursor-help underline decoration-accent-300 decoration-dotted decoration-2 underline-offset-[3px] group-hover:decoration-accent group-focus-within:decoration-accent"
+      >
+        {children}
+      </strong>
+      <span
+        role="tooltip"
+        id={`def-${entry.slug}`}
+        className="pointer-events-none invisible absolute top-[calc(100%+8px)] right-0 left-0 z-30 border-2 border-edge bg-panel px-3.5 py-3 text-[13px] leading-[1.5] font-[400] text-ink-dim opacity-0 transition-opacity duration-100 group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100"
+      >
+        <span className={`${MICRO} mb-1.5 block text-accent-700`}>{entry.term}</span>
+        {entry.def}
+      </span>
+    </span>
   )
 }
 
@@ -390,6 +450,7 @@ export function SimPanel({
   keys = false,
   children,
   footer,
+  tryThis,
   right,
 }) {
   return (
@@ -418,13 +479,43 @@ export function SimPanel({
         </div>
       )}
 
-      <div className="border-y-2 border-edge">
+      <div className="border-t-2 border-edge">
         <StepControls sim={sim} keys={keys} />
       </div>
+
+      {/* Directly under the transport, because it is a list of things to press. */}
+      {tryThis && <TryThis items={tryThis} />}
+      {!tryThis && <div className="border-b-2 border-edge" />}
 
       {footer && (
         <div className="px-6 py-4 text-[13px] leading-[1.6] text-neutral-700">{footer}</div>
       )}
+    </div>
+  )
+}
+
+/**
+ * A short numbered list of experiments, inside the simulator pane.
+ *
+ * It exists for focus mode. "Focus simulator" takes the prose out of flow
+ * entirely, so a reader who wants the instrument full-width previously had no
+ * instructions at all beyond one paragraph of footer. This is a checklist with
+ * exact knob settings, not an explanation — the prose still owns the why.
+ */
+export function TryThis({ items }) {
+  return (
+    <div className="border-b-2 border-edge px-6 py-4">
+      <div className={`${MICRO} mb-2.5 text-accent-700`}>Try this</div>
+      <ol className="grid gap-2">
+        {items.map((t, i) => (
+          <li key={i} className="grid grid-cols-[22px_1fr] gap-2">
+            <span className="font-mono text-[11px] text-neutral-600">
+              {String(i + 1).padStart(2, '0')}
+            </span>
+            <span className="text-[13px] leading-[1.5] text-neutral-800">{t}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }
@@ -443,6 +534,55 @@ export function Takeaways({ items }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+/**
+ * A cross-stage reference, e.g. `<StageRef n={7} />` → "stage 07", linked.
+ *
+ * Cross-references are links rather than prose for two reasons: a beginner
+ * hitting a forward reference can follow it, and the number and title come from
+ * roadmap.js, so a renumbered stage cannot leave a stale mention behind.
+ * `stages.test.jsx` fails on any bare "stage NN" left in a page.
+ *
+ * `title` renders the long form — "Prefix caching (stage 07)" — for the first
+ * mention on a page or the start of a sentence.
+ */
+export function StageRef({ n, title = false }) {
+  const stage = stageByNumber[n]
+  if (!stage) return null
+  const label = `stage ${String(stage.n).padStart(2, '0')}`
+  return (
+    <Link to={`/stage/${stage.slug}`}>{title ? `${stage.title} (${label})` : label}</Link>
+  )
+}
+
+/**
+ * The handoff between acts, rendered by StageLayout at the foot of an act's last
+ * stage and nowhere else (bridgeFor returns null elsewhere, so pages don't opt
+ * in). Thirteen stages is a long read; this is where a reader finds out what
+ * they are now holding and why the next act needs it.
+ */
+export function ActBridge({ slug }) {
+  const bridge = bridgeFor(slug)
+  if (!bridge) return null
+
+  return (
+    <div className="mt-11 border-t-2 border-edge pt-6">
+      <div className={`${MICRO} mb-4 text-accent-700`}>End of this act</div>
+      <p className="mt-0 mb-3 text-[15px] leading-[1.6]">
+        <strong>What you have now.</strong> {bridge.have}
+      </p>
+      <p className="mt-0 mb-4 text-[15px] leading-[1.6]">
+        <strong>What comes next.</strong> {bridge.next}
+      </p>
+      <Link
+        to={`/stage/${bridge.firstStage.slug}`}
+        className="inline-block text-[17px] font-[800] tracking-[-0.015em]"
+      >
+        Act {String(bridge.nextActNumber).padStart(2, '0')} · {bridge.nextAct.title} →
+      </Link>
     </div>
   )
 }

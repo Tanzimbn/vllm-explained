@@ -4,6 +4,7 @@ import Shell from './components/layout/Shell'
 import StageHeader from './components/layout/StageHeader'
 import { stageBySlug } from './content/roadmap'
 import RoadmapMap from './stages/RoadmapMap'
+import Glossary from './stages/Glossary'
 
 /* One module per stage, lazily loaded so the initial page stays light. */
 const PAGES = {
@@ -49,6 +50,9 @@ export default function App() {
       <Routes>
         <Route path="/" element={<RoadmapMap />} />
         <Route path="/stage/:slug" element={<StagePage />} />
+        {/* Eager, not lazy: it is small, and a deep link to #b-sat has to
+            resolve on first paint for the anchor to land. */}
+        <Route path="/glossary" element={<Glossary />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Shell>

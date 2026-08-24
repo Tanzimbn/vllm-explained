@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { neighbours } from '../../content/roadmap'
-import { SimPanel } from '../ui'
+import { ActBridge, SimPanel } from '../ui'
 
 /*
  * The two-pane stage: prose on the left, the stage's primary simulator pinned in
@@ -16,8 +16,15 @@ import { SimPanel } from '../ui'
 
 const MICRO = 'font-mono text-[10px] tracking-[0.14em] uppercase'
 
+/*
+ * No `overflow-hidden` here. `min-w-0` is what actually stops a wide child from
+ * blowing out the grid column, and every wide child (code blocks, block grids)
+ * carries its own `.scroll-x`. Clipping the article as well would cut off a
+ * <Term> hover panel whenever the term sits at the start of a line, which is
+ * exactly where a term being introduced tends to sit.
+ */
 const ARTICLE =
-  'prose-stage order-2 min-w-0 overflow-hidden px-[18px] pt-7 pb-11 sm:px-8 lg:order-1 lg:border-r-2 lg:border-edge lg:pt-8 lg:pr-10 lg:pb-14'
+  'prose-stage order-2 min-w-0 px-[18px] pt-7 pb-11 sm:px-8 lg:order-1 lg:border-r-2 lg:border-edge lg:pt-8 lg:pr-10 lg:pb-14'
 
 /**
  * Grid classes for the two focus states, as a pure function so both can be
@@ -79,6 +86,7 @@ export default function StageLayout({
   knobs,
   legend,
   simFooter,
+  tryThis,
   keys = true,
   children,
 }) {
@@ -92,6 +100,8 @@ export default function StageLayout({
       <article className={pane.article}>
         <div className="max-w-[70ch]">
           {children}
+          {/* Renders only at the foot of an act's last stage; null elsewhere. */}
+          <ActBridge slug={slug} />
           <PrevNext slug={slug} />
         </div>
       </article>
@@ -104,6 +114,7 @@ export default function StageLayout({
           knobs={knobs}
           legend={legend}
           footer={simFooter}
+          tryThis={tryThis}
           keys={keys}
           right={
             <button

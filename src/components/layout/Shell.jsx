@@ -41,6 +41,9 @@ function Header() {
           <NavLink to={`/stage/${stages[Math.max(0, current)].slug}`} className={navCell}>
             Stages
           </NavLink>
+          <NavLink to="/glossary" className={`${navCell} hidden sm:flex`}>
+            Glossary
+          </NavLink>
           <a href={source.url} target="_blank" rel="noreferrer" className={navCell}>
             Source post ↗
           </a>

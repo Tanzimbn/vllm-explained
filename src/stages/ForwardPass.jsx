@@ -8,9 +8,11 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { C, DistChart, reqColor, reqInk, TokenStrip } from '../components/viz'
 
@@ -270,6 +272,11 @@ export default function ForwardPass() {
       sim={flat}
       simTitle="Batch flattening & slot_mapping"
       simSubtitle="Colour identifies the owning request. Set block_size to 4 to make the slot arithmetic easy to follow; ▲ marks a sequence boundary in cu_seqlens."
+      tryThis={[
+        'Leave block_size at 4 and step to the end: 17 rows, five gathers.',
+        'Watch slot_mapping as P0 crosses from position 3 to position 4. Slot 211 jumps to 136.',
+        'Set Prefills in batch to 0: every row is now a decode, exactly one per request.',
+      ]}
       panel={<ForwardViz sim={flat} />}
       legend={[
         { label: 'prefill request', color: C.prefill },
@@ -286,45 +293,56 @@ export default function ForwardPass() {
       }
     >
       <p>
-        The scheduler has decided who runs. Now the model executor's <Code>execute_model</Code>{' '}
-        delegates to the <Code>Worker</Code>, which delegates to the model runner — and five things
-        happen.
+        The scheduler has picked who runs this step. Those requests are now a ragged pile: two
+        prompts of seven tokens, three sequences wanting one token each, every one of them with its
+        KV scattered across different physical blocks. The GPU wants a tensor.
+      </p>
+      <p>
+        Turning the pile into the tensor is the model runner's job, and it takes five steps.
       </p>
 
       <ol>
         <li>
-          <strong>Update states</strong> — prune finished requests from <Code>input_batch</Code>;
-          refresh forward-pass metadata, above all each request's KV-cache block list.
+          <strong>Update states</strong> — drop finished requests from <Code>input_batch</Code> and
+          refresh the metadata for this pass, above all each request's list of KV blocks.
         </li>
         <li>
-          <strong>Prepare inputs</strong> — copy buffers CPU→GPU, compute positions, build{' '}
-          <Code>slot_mapping</Code>, construct the attention metadata.
+          <strong>Prepare inputs</strong> — copy the buffers from CPU to GPU, work out each token's
+          position, build <Code>slot_mapping</Code>, assemble the attention metadata.
         </li>
         <li>
-          <strong>Forward pass</strong> — run the model with paged-attention kernels over one
-          flattened super-sequence.
+          <strong>Forward pass</strong> — run the model over one flattened sequence, using
+          attention kernels that know about blocks.
         </li>
         <li>
-          <strong>Gather last-token states</strong> — pull the hidden state at each sequence's final
-          position and compute logits.
+          <strong>Gather last-token states</strong> — take the hidden state at each sequence's final
+          position and turn it into logits, one score per word in the vocabulary.
         </li>
         <li>
-          <strong>Sample</strong> — one token per sequence, per its own sampling config.
+          <strong>Sample</strong> — pick one token per sequence, each by its own sampling settings.
         </li>
       </ol>
 
       <h2>One flat tensor, no padding</h2>
       <p>
-        This is the mechanical trick that makes continuous batching possible. Rather than stacking
-        sequences into a padded rectangle, every scheduled request's new tokens are{' '}
-        <strong>concatenated into a single long sequence</strong>. A prefill contributes as many
-        rows as its prompt is long; a decode contributes exactly one. Position indices and the
-        attention metadata guarantee each sequence attends only to its own tokens.
+        The obvious way to batch sequences of different lengths is to pad them to a rectangle. vLLM
+        does not. Every scheduled request's new tokens are simply laid end to end in one long
+        sequence.
       </p>
       <p>
-        Because there is no rectangle, there is nothing to keep intact between steps — the batch can
-        have a completely different composition every step, at zero cost. Step the panel on the
-        right to watch the arrays get built one token at a time.
+        A prefill contributes one row per prompt token. A decode contributes exactly one row. The
+        panel's default batch is two prefills of 7 tokens and three decodes, so the tensor is 17
+        rows tall and nothing is padding.
+      </p>
+      <p>
+        Nothing keeps the sequences apart except bookkeeping. An array of start offsets tells the
+        attention kernel where each sequence begins — that is <Code>cu_seqlens</Code>, here{' '}
+        <Code>[0, 7, 14, 15, 16]</Code>. Each token also carries its own position within its own
+        sequence, so it can only ever attend inside its own span.
+      </p>
+      <p>
+        This is why the batch can be rebuilt every step, which is the promise <StageRef n={1} />{' '}
+        made. There is no rectangle to keep intact, so there is nothing to break.
       </p>
 
       <BlogFigure
@@ -332,34 +350,86 @@ export default function ForwardPass() {
         caption="Continuous batching and paged attention in one forward pass"
       />
 
-      <Callout kind="key" title="One row in, one token out — regardless of size">
+      <Callout kind="intuition" title="A rectangle against a ribbon">
         <p>
-          Only the last position of a sequence can predict its next token, so however many rows a
-          request contributed, exactly one logits row is gathered for it. A 2000-token prefill and a
-          1-token decode both yield precisely one new token from the step. That asymmetry is why
-          prefill is the expensive part of a request's life and decode is the long part.
+          Padding sequences into a rectangle is like filing letters of different lengths by
+          stretching every one to the length of the longest. It works, and the wasted paper is the
+          padding — but worse, the shape is now fixed. Swapping a letter means rebuilding the block.
+        </p>
+        <p>
+          vLLM glues the letters into one long ribbon and keeps a note of where each begins. No
+          shape to preserve, so the contents can change every single step for free.
         </p>
       </Callout>
 
-      <h2>Eager vs captured</h2>
+      <h2>Where each token's KV actually goes</h2>
       <p>
-        The forward pass itself runs in one of two modes. <strong>Eager mode</strong> is a standard
-        PyTorch forward pass. <strong>Captured mode</strong> replays a <strong>CUDA graph</strong>{' '}
-        recorded at startup for a set of warmup batch sizes — the whole sequence of GPU work
-        pre-baked into a DAG so it can be launched as one unit.
+        Every one of those 17 rows is about to produce a key and a value. Each has to be written
+        somewhere in the paged KV cache, and the array that says where is{' '}
+        <Code>slot_mapping</Code> — one physical slot number per row.
+      </p>
+      <p>Working out a slot takes one line, and it is the whole of paging at the kernel boundary.</p>
+      <CodeBlock
+        lang="text"
+        caption="Which logical block the position falls in, which physical block that is, and how far into it to write."
+        code={`slot = block_table[pos // block_size] * block_size + (pos % block_size)`}
+      />
+      <p>
+        Follow one token through it. Set <Code>block_size</Code> to 4 in the panel and look at{' '}
+        <Code>P0</Code>, whose block table is <Code>[52, 34]</Code>. Its token at position 4 falls in
+        logical block <Code>4 // 4 = 1</Code>, which the block table says is physical block 34. The
+        offset inside that block is <Code>4 % 4 = 0</Code>. So the slot is{' '}
+        <Code>34 * 4 + 0 = 136</Code>.
       </p>
       <p>
-        The win is not arithmetic; it's launch overhead. A decode step does very little work per
-        kernel, so the CPU-side cost of launching hundreds of kernels can rival the GPU time itself.
-        Replaying a graph collapses that. Pass <Code>--enforce-eager</Code> to skip capture: startup
-        gets faster and more VRAM stays free, at the cost of per-step latency.
+        Now do the token just before it. Position 3 is in logical block 0, which is physical block
+        52, at offset 3 — slot <Code>52 * 4 + 3 = 211</Code>.
+      </p>
+      <p>
+        Positions 3 and 4 are next-door neighbours in the sequence, and their KV lands in slots 211
+        and 136. That jump is not a bug; it is the point. The sequence is contiguous only in its own
+        numbering, and the block table is what hides the scattering from everything above it.
+      </p>
+
+      <Callout kind="key" title="One row in, one token out — whatever the size">
+        <p>
+          Only the last position of a sequence can predict that sequence's next token. So however
+          many rows a request contributed, exactly one row of logits is gathered for it. In the
+          default batch those are rows 6, 13, 14, 15 and 16 — five gathers for five requests.
+        </p>
+        <p>
+          A 2000-token prefill and a 1-token decode both come out of the step with exactly one new
+          token. That asymmetry is why prefill is the expensive part of a request's life, and decode
+          is the long part.
+        </p>
+      </Callout>
+
+      <h2>Eager or captured</h2>
+      <p>
+        The forward pass itself runs one of two ways. <strong>Eager mode</strong> is an ordinary
+        PyTorch forward pass: Python asks the GPU to do one operation, then the next, then the next.
+      </p>
+      <p>
+        <strong>Captured mode</strong> replays a <Term>CUDA graph</Term> instead. At startup the
+        engine records the entire sequence of GPU operations for a few common batch sizes, and saves
+        it as one object that can be launched with a single instruction.
+      </p>
+      <p>
+        The saving is not arithmetic — the same maths happens either way. It is the cost of{' '}
+        <em>asking</em>. A decode step does very little work per operation, so the CPU time spent
+        launching hundreds of them can rival the GPU time spent doing them. Replaying a graph
+        collapses that overhead.
+      </p>
+      <p>
+        Pass <Code>--enforce-eager</Code> to skip the recording. Startup gets faster and the graphs
+        stop taking up VRAM, at the cost of slower steps.
       </p>
 
       <h2>Sampling</h2>
       <p>
-        Finally, logits become a token. The knobs compose in a fixed order — temperature reshapes
+        Finally the logits become a token. The knobs apply in a fixed order: temperature reshapes
         the distribution, then <Code>top_k</Code> and <Code>top_p</Code> delete part of it, then
-        what's left is renormalized and drawn from.
+        what survives is renormalised and drawn from.
       </p>
 
       <SimFrame

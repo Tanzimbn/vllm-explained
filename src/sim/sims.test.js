@@ -11,11 +11,12 @@ import chunkedPrefill, { itlStats } from './chunkedPrefill'
 import prefixCache, { findLongestCacheHit, hashRequestTokens } from './prefixCache'
 import guidedDecoding, {
   allowedAt,
+  buildBitmask,
   isAccepting,
   VOCAB as GD_VOCAB,
   WORDS,
 } from './guidedDecoding'
-import specDecode, { pTarget, speedup, VOCAB as SD_VOCAB } from './specDecode'
+import specDecode, { pDraft, pTarget, speedup, VOCAB as SD_VOCAB } from './specDecode'
 import disaggPD, { pdStats } from './disaggPD'
 import parallelism, { tpCost } from './parallelism'
 import distributedSim, { balanceStats, score } from './distributed'
@@ -94,6 +95,27 @@ describe('batching — static vs continuous', () => {
     expect(c.tokensOut).toBe(s.tokensOut)
   })
 
+  /**
+   * Stage 01 walks the reader through the panel and quotes what they will see.
+   * Those figures are the sim's output at its default knobs, so they are pinned
+   * here: change the sim and this fails before the page can quietly start lying.
+   */
+  it('produces exactly the run the stage 01 prose describes', () => {
+    const opts = { numRequests: 8, maxBatch: 4, spread: 9 }
+    const s = runSim(batching, { ...opts, mode: 'static' }, 400).state
+    const c = runSim(batching, { ...opts, mode: 'continuous' }, 400).state
+
+    expect([s.tick, s.wastedSlotSteps, Math.round(utilization(s))]).toEqual([21, 23, 73])
+    expect([c.tick, c.wastedSlotSteps]).toEqual([17, 7])
+
+    // With no spread in output lengths there is nothing for either mode to waste.
+    const flat = { ...opts, spread: 0 }
+    for (const mode of ['static', 'continuous']) {
+      const f = runSim(batching, { ...flat, mode }, 400).state
+      expect([f.tick, f.wastedSlotSteps, Math.round(utilization(f))]).toEqual([4, 0, 100])
+    }
+  })
+
   it('no request is ever admitted twice', () => {
     const { trace } = runSim(batching, { mode: 'continuous' }, 400)
     trace.forEach((s) => {
@@ -139,6 +161,78 @@ describe('kvcache — the block allocator', () => {
       return effs.reduce((a, b) => a + b, 0) / Math.max(1, effs.length)
     }
     expect(eff('paged')).toBeGreaterThan(eff('contiguous'))
+  })
+
+  /**
+   * Every knob setting has to reach a terminal state. A simulator that can be
+   * driven into a frozen picture with ▶ Run still spinning teaches nothing, and
+   * a fifth of this sim's parameter space used to do exactly that: the pool
+   * empties, every live request stalls waiting for a block, and no request can
+   * ever finish to return one.
+   */
+  /**
+   * Stage 03 walks the reader through both allocators and quotes what they will
+   * see. Pinned here so the sim cannot drift away from the sentence.
+   */
+  it('produces exactly the two runs the stage 03 prose describes', () => {
+    const opts = { numBlocks: 32, numRequests: 7, blockSize: 8 }
+    const lowestEfficiency = (p) => {
+      const { trace, params } = runSim(kvcache, p, 400)
+      const live = trace.filter((s) => s.blocks.some((b) => b.owner !== null))
+      return Math.round(Math.min(...live.map((s) => memoryBreakdown(s, params).efficiency)))
+    }
+
+    const paged = { ...opts, mode: 'paged' }
+    const p = runSim(kvcache, paged, 400).state
+    expect([p.tick, p.peakConcurrent]).toEqual([23, 7])
+    expect(lowestEfficiency(paged)).toBe(85)
+
+    const contig = { ...opts, mode: 'contiguous' }
+    const c = runSim(kvcache, contig, 400).state
+    expect([c.tick, c.peakConcurrent]).toEqual([33, 3])
+    expect(lowestEfficiency(contig)).toBe(35)
+
+    // Both serve the same seven requests; paging just holds more of them at once.
+    expect(p.requests.filter((r) => r.status === 'done')).toHaveLength(7)
+    expect(c.requests.filter((r) => r.status === 'done')).toHaveLength(7)
+
+    // Ten requests is where contiguous starts failing on fragmentation alone.
+    const crowded = runSim(kvcache, { ...contig, numRequests: 10 }, 400).state
+    expect(crowded.blockedByFragmentation).toBe(6)
+  })
+
+  it('always terminates, in every corner of the knob space', () => {
+    for (const mode of ['paged', 'contiguous']) {
+      for (const numBlocks of [16, 24, 32, 48, 64]) {
+        for (const numRequests of [3, 5, 7, 8, 10]) {
+          for (const blockSize of [4, 8, 16]) {
+            const p = { mode, numBlocks, numRequests, blockSize }
+            let s = kvcache.init(p)
+            let steps = 0
+            while (!kvcache.isDone(s, p) && steps++ < 3000) s = kvcache.step(s, p)
+            expect(kvcache.isDone(s, p), `never settles at ${JSON.stringify(p)}`).toBe(true)
+          }
+        }
+      }
+    }
+  })
+
+  it('stops on deadlock rather than spinning, and says so', () => {
+    // The pool is far too small for ten requests, so paging runs out of blocks.
+    const p = { mode: 'paged', numBlocks: 32, numRequests: 10, blockSize: 8 }
+    let s = kvcache.init(p)
+    let steps = 0
+    while (!kvcache.isDone(s, p) && steps++ < 3000) s = kvcache.step(s, p)
+
+    expect(kvcache.isDone(s, p)).toBe(true)
+    // Stage 03 quotes this: nine admitted, stuck after nine steps.
+    expect([s.tick, s.peakConcurrent]).toEqual([9, 9])
+    // Terminal, but not because everyone finished — this is the stuck state.
+    expect(s.requests.some((r) => r.status !== 'done')).toBe(true)
+    expect(s.freeQueue).toHaveLength(0)
+    expect(s.note).toContain('preemption')
+    // And stepping again changes nothing, which is what made it a deadlock.
+    expect(kvcache.step(s, p).requests).toEqual(s.requests)
   })
 
   it('contiguous mode only ever holds adjacent runs', () => {
@@ -196,6 +290,29 @@ describe('engine — the guided tour', () => {
 })
 
 describe('scheduler', () => {
+  /**
+   * Stage 04 walks the reader through three runs and quotes each one. Pinned so
+   * the page cannot quietly start describing a simulator that no longer exists.
+   */
+  it('produces exactly the three runs the stage 04 prose describes', () => {
+    const base = { policy: 'fcfs', tokenBudget: 64, numBlocks: 14, numRequests: 7, promptSpread: 42 }
+
+    // Roomy: everybody served, nobody preempted.
+    const easy = runSim(schedulerSim, base, 400).state
+    expect([easy.tick, easy.totalPreemptions, easy.wastedRecompute]).toEqual([20, 0, 0])
+    expect(easy.requests.every((r) => r.status === 'done')).toBe(true)
+
+    // Tight on blocks: one preemption, and the work it destroys is counted.
+    const tight = runSim(schedulerSim, { ...base, numBlocks: 8 }, 400).state
+    expect([tight.totalPreemptions, tight.wastedRecompute]).toEqual([1, 55])
+
+    // Tight on budget: a prompt longer than the whole budget can never be run.
+    const starved = runSim(schedulerSim, { ...base, tokenBudget: 24, promptSpread: 90 }, 400).state
+    expect(starved.tick).toBe(12)
+    expect(starved.requests.filter((r) => r.status === 'done')).toHaveLength(1)
+    expect(starved.stuck).toMatch(/chunked prefill/)
+  })
+
   it('holds all invariants across a wide parameter sweep', () => {
     for (const policy of ['fcfs', 'priority']) {
       for (const numBlocks of [8, 14, 40]) {
@@ -310,6 +427,27 @@ describe('scheduler', () => {
 })
 
 describe('forward pass — flattening and slot_mapping', () => {
+  /**
+   * Stage 05 derives the slot arithmetic on the panel's own default batch, and
+   * quotes the block table and both slot numbers. Pinned so the worked example
+   * cannot go stale.
+   */
+  it('produces exactly the batch the stage 05 prose works through', () => {
+    const b = buildBatch({ numPrefill: 2, numDecode: 3, blockSize: 4 })
+
+    expect(b.flat).toHaveLength(17)
+    expect(b.starts).toEqual([0, 7, 14, 15, 16])
+    expect(b.gatherRows).toEqual([6, 13, 14, 15, 16])
+
+    const p0 = b.requests.find((r) => r.id === 'P0')
+    expect(p0.blocks).toEqual([52, 34])
+
+    // The two neighbouring positions the page walks through by hand.
+    const slotAt = (id, pos) => b.flat.find((f) => f.reqId === id && f.pos === pos).slot
+    expect(slotAt('P0', 3)).toBe(211) // block_table[0] = 52 -> 52 * 4 + 3
+    expect(slotAt('P0', 4)).toBe(136) // block_table[1] = 34 -> 34 * 4 + 0
+  })
+
   it('invariants hold for every batch composition', () => {
     for (const numPrefill of [0, 1, 2, 3]) {
       for (const numDecode of [0, 1, 4]) {
@@ -452,6 +590,44 @@ describe('sampling', () => {
 })
 
 describe('chunked prefill', () => {
+  /**
+   * Stage 06 quotes both runs and the two ends of the threshold sweep, because
+   * the whole tuning story is that those two numbers move in opposite
+   * directions. Pinned so the page cannot outlive the sim.
+   */
+  it('produces exactly the runs the stage 06 prose describes', () => {
+    const base = { longPromptLen: 1024, threshold: 128, tokenBudget: 2048, numDecoders: 4 }
+    const run = (p) => {
+      const { state } = runSim(chunkedPrefill, p, 400)
+      return { s: state, itl: itlStats(state) }
+    }
+
+    const off = run({ ...base, chunking: 'off' })
+    expect(Math.round(off.itl.p50)).toBe(6)
+    expect(Math.round(off.itl.max)).toBe(99)
+    expect(off.itl.spike).toBeGreaterThan(15)
+
+    const on = run({ ...base, chunking: 'on' })
+    expect(Math.round(on.itl.max)).toBe(18)
+    expect(on.itl.spike).toBe(1)
+
+    // Same work, same wall clock — only the distribution of the waiting changed.
+    expect([on.s.tick, Math.round(on.s.elapsedMs)]).toEqual([off.s.tick, Math.round(off.s.elapsedMs)])
+    expect([on.s.tick, Math.round(on.s.elapsedMs)]).toEqual([10, 156])
+
+    // What chunking costs: the long prompt's own time to first token.
+    expect(Math.round(off.s.prefillTTFT)).toBe(99)
+    expect(Math.round(on.s.prefillTTFT)).toBe(143)
+
+    // The trade-off, at both ends of the threshold knob.
+    const coarse = run({ ...base, chunking: 'on', threshold: 512 })
+    const fine = run({ ...base, chunking: 'on', threshold: 64 })
+    expect(Math.round(coarse.itl.spike)).toBe(8)
+    expect(Math.round(coarse.s.prefillTTFT)).toBe(105)
+    expect(fine.itl.spike).toBe(1)
+    expect(Math.round(fine.s.prefillTTFT)).toBe(192)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const chunking of ['on', 'off']) {
       for (const threshold of [64, 128, 512]) {
@@ -503,6 +679,31 @@ describe('chunked prefill', () => {
 })
 
 describe('prefix caching', () => {
+  /**
+   * Stage 07 quotes the cold/warm split and the alignment demo. The alignment
+   * one only became possible when the Shared prefix knob dropped to steps of 8:
+   * on steps of 16 every value was a multiple of block_size, so the page was
+   * telling readers to do something the panel could not do.
+   */
+  it('produces exactly the runs the stage 07 prose describes', () => {
+    const base = { prefixTokens: 64, suffixTokens: 12, numRequests: 3 }
+
+    const on = runSim(prefixCache, { ...base, enabled: 'on' }, 400).state
+    expect(on.requests.map((r) => r.hits)).toEqual([0, 4, 4])
+    expect(on.requests.map((r) => r.computedTokens)).toEqual([76, 12, 12])
+    expect([on.totalComputed, on.totalSaved]).toEqual([100, 128])
+
+    const off = runSim(prefixCache, { ...base, enabled: 'off' }, 400).state
+    expect([off.totalComputed, off.totalSaved]).toEqual([228, 0])
+
+    // 8 extra shared tokens buy no extra hits and cost every later request 8
+    // recomputed tokens — the alignment lesson, in numbers.
+    const misaligned = runSim(prefixCache, { ...base, enabled: 'on', prefixTokens: 72 }, 400).state
+    expect(misaligned.requests.map((r) => r.hits)).toEqual([0, 4, 4])
+    expect(misaligned.requests.map((r) => r.computedTokens)).toEqual([84, 20, 20])
+    expect([misaligned.totalComputed, misaligned.totalSaved]).toEqual([124, 128])
+  })
+
   it('invariants hold across the knob space', () => {
     for (const enabled of ['on', 'off']) {
       for (const prefixTokens of [16, 64, 160]) {
@@ -582,6 +783,31 @@ describe('prefix caching', () => {
 })
 
 describe('guided decoding', () => {
+  /**
+   * Stage 08 quotes all four runs, because the whole argument is that the same
+   * scores produce a valid word or garbage depending only on masking. The
+   * "leans toward Negative" case is quoted too: it used to come out "Positive",
+   * because the nudge lost to the random term.
+   */
+  it('produces exactly the four runs the stage 08 prose describes', () => {
+    const emit = (p) => {
+      const { state } = runSim(guidedDecoding, p, 200)
+      return [state.emitted, state.violations, state.tick]
+    }
+
+    expect(emit({ guided: 'on', sentiment: 'positive' })).toEqual(['Positive', 0, 8])
+    expect(emit({ guided: 'on', sentiment: 'negative' })).toEqual(['Negative', 0, 8])
+
+    // Identical scores, no mask: the junk tokens win.
+    expect(emit({ guided: 'off', sentiment: 'positive' })).toEqual(['Posx', 1, 4])
+    expect(emit({ guided: 'off', sentiment: 'negative' })).toEqual(['7', 1, 1])
+
+    // The mask the page prints: 16-token vocab, only P and N legal at step one.
+    const mask = buildBitmask(allowedAt({ pos: 0, branch: null }))
+    expect(mask.value).toBe(129)
+    expect(mask.binary).toBe('0000000010000001')
+  })
+
   it('invariants hold for every configuration', () => {
     for (const guided of ['on', 'off']) {
       for (const sentiment of ['positive', 'negative']) {
@@ -633,6 +859,47 @@ describe('guided decoding', () => {
 })
 
 describe('speculative decoding', () => {
+  /**
+   * Stage 09 quotes the default run, both ends of the k sweep, and the two
+   * probabilities it uses to explain the residual distribution. Pinned so the
+   * worked example and the tuning advice cannot drift apart from the sim.
+   */
+  it('produces exactly the numbers the stage 09 prose quotes', () => {
+    const base = { k: 4, agreement: 0.6, draftCost: 0.1, method: 'ngram' }
+    const after = (p, rounds) => {
+      let s = specDecode.init(p)
+      for (let i = 0; i < rounds; i++) s = specDecode.step(s, p)
+      return s
+    }
+
+    const s = after(base, 400)
+    const sp = speedup(s, base)
+    expect(sp.acceptRate).toBeCloseTo(0.62, 2)
+    expect(sp.tokensPerRound).toBeCloseTo(3.5, 1)
+    expect(sp.factor).toBeCloseTo(2.5, 1)
+
+    // Low agreement: the peak is early and large k is actively worse.
+    const low = (k) => speedup(after({ ...base, agreement: 0.2, k }, 300), { ...base, agreement: 0.2, k }).factor
+    expect(low(3)).toBeCloseTo(1.8, 1)
+    expect(low(7)).toBeCloseTo(1.6, 1)
+    expect(low(7)).toBeLessThan(low(3))
+
+    // High agreement: still climbing at the top of the knob's range.
+    const high = (k) => speedup(after({ ...base, agreement: 0.9, k }, 300), { ...base, agreement: 0.9, k }).factor
+    expect(high(7)).toBeCloseTo(4.0, 1)
+    expect(high(7)).toBeGreaterThan(high(3))
+
+    // The two probabilities the residual example is built on.
+    expect(pTarget[0]).toBeCloseTo(0.42, 2) // "the"
+    expect(pTarget[1]).toBeCloseTo(0.21, 2) // "a"
+    const draft = pDraft(0.6)
+    expect(draft[0]).toBeCloseTo(0.29, 2)
+    expect(draft[1]).toBeCloseTo(0.29, 2)
+    // So "the" keeps weight in the residual and "a" is clamped away.
+    expect(pTarget[0] - draft[0]).toBeGreaterThan(0.1)
+    expect(pTarget[1] - draft[1]).toBeLessThan(0)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const k of [1, 4, 7]) {
       for (const agreement of [0, 0.5, 1]) {
@@ -728,6 +995,37 @@ describe('speculative decoding', () => {
 })
 
 describe('disaggregated P/D', () => {
+  /**
+   * Stage 10 quotes both deployments and two points on the transfer knob. The
+   * TTFT half of that only became true once TTFT was stamped after the KV
+   * transfer rather than at the end of the prefill: before that the transfer was
+   * invisible, disaggregation looked free, and the knob changed nothing.
+   */
+  it('produces exactly the trade the stage 10 prose describes', () => {
+    const base = { numRequests: 6, promptLen: 768, transferCost: 2 }
+    const stats = (p) => pdStats(runSim(disaggPD, p, 400).state)
+
+    const colo = stats({ ...base, mode: 'colocated' })
+    const split = stats({ ...base, mode: 'disagg' })
+
+    // The win: decode steps stop having prefills bolted onto them.
+    expect(Math.round(colo.p95Itl)).toBe(83)
+    expect(Math.round(colo.p50Itl)).toBe(7)
+    expect(split.p95Itl).toBeCloseTo(split.p50Itl, 0)
+    expect(split.p95Itl).toBeLessThan(colo.p95Itl / 10)
+
+    // The bill: the KV has to cross the wire before a first token exists.
+    expect(Math.round(colo.meanTtft)).toBe(255)
+    expect(Math.round(split.meanTtft)).toBe(379)
+
+    // And it is paid entirely out of TTFT — the ITL win is unaffected.
+    const cheap = stats({ ...base, mode: 'disagg', transferCost: 1 })
+    const dear = stats({ ...base, mode: 'disagg', transferCost: 4 })
+    expect(Math.round(cheap.meanTtft)).toBe(316)
+    expect(Math.round(dear.meanTtft)).toBe(456)
+    expect(dear.p95Itl).toBeCloseTo(cheap.p95Itl, 2)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const mode of ['colocated', 'disagg']) {
       for (const promptLen of [256, 768, 1536]) {
@@ -783,6 +1081,30 @@ describe('disaggregated P/D', () => {
 })
 
 describe('tensor parallelism', () => {
+  /**
+   * Stage 11 quotes the whole TP sweep, because "four GPUs to eight buys
+   * nothing" is the point of the page and is far more convincing as a number
+   * than as a claim. Pinned so the page and the chart cannot disagree.
+   */
+  it('produces exactly the scaling the stage 11 prose quotes', () => {
+    const at = (tpSize, commCost) => tpCost(tpSize, { commCost, numLayers: 3 })
+
+    // Default all-reduce cost: efficiency collapses, and TP8 ties TP4.
+    expect(at(2, 1).speedup).toBeCloseTo(1.6, 1)
+    expect(at(4, 1).speedup).toBeCloseTo(2.0, 1)
+    expect(at(8, 1).speedup).toBeCloseTo(2.0, 1)
+    expect(at(8, 1).efficiency).toBeCloseTo(0.25, 2)
+    expect(at(8, 1).speedup).toBeCloseTo(at(4, 1).speedup, 2)
+
+    // Free communication: perfect scaling. Communication is the whole story.
+    expect(at(8, 0).speedup).toBeCloseTo(8, 5)
+    expect(at(8, 0).efficiency).toBeCloseTo(1, 5)
+
+    // Expensive communication: eight GPUs are slower than one.
+    expect(at(8, 4).speedup).toBeCloseTo(0.62, 2)
+    expect(at(8, 4).speedup).toBeLessThan(1)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const tpSize of [1, 2, 4, 8]) {
       for (const numLayers of [2, 4, 6]) {
@@ -832,6 +1154,34 @@ describe('tensor parallelism', () => {
 })
 
 describe('distributed serving — load balancing', () => {
+  /**
+   * Stage 12 quotes both ends of the routing comparison, including the part that
+   * makes load-aware routing look pointless. That honesty is the lesson: with
+   * uniform request costs, counting requests already is counting work, and
+   * round-robin edges it out. The gap only opens once costs are uneven.
+   */
+  it('produces exactly the routing comparison the stage 12 prose quotes', () => {
+    const mean = (policy, over) => {
+      const p = { arrivalRate: 2, skew: 6, capacity: 3, ...over, policy }
+      let s = distributedSim.init(p)
+      for (let i = 0; i < 200; i++) s = distributedSim.step(s, p)
+      return balanceStats(s).mean
+    }
+
+    // Uniform costs: round-robin is fractionally better than scoring.
+    const flat = { skew: 0, arrivalRate: 2 }
+    expect(mean('roundrobin', flat)).toBeCloseTo(0.81, 1)
+    expect(mean('score', flat)).toBeCloseTo(0.89, 1)
+    expect(mean('roundrobin', flat)).toBeLessThan(mean('score', flat))
+
+    // Uneven costs under load: scoring holds while the others fall apart.
+    const hard = { skew: 10, arrivalRate: 5 }
+    expect(mean('score', hard)).toBeCloseTo(1.07, 1)
+    expect(mean('roundrobin', hard)).toBeCloseTo(2.6, 1)
+    expect(mean('random', hard)).toBeCloseTo(9.15, 1)
+    expect(mean('score', hard)).toBeLessThan(mean('roundrobin', hard) / 2)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const policy of ['score', 'roundrobin', 'random']) {
       for (const arrivalRate of [1, 3, 5]) {
@@ -894,6 +1244,38 @@ describe('distributed serving — load balancing', () => {
 })
 
 describe('roofline model', () => {
+  /**
+   * Stage 13 quotes this sweep, and in particular that B_sat does not move when
+   * the model size does. The page used to claim the opposite; the algebra says
+   * B_sat is peak compute over bandwidth, with the model size cancelling out.
+   */
+  it('produces exactly the sweep the stage 13 prose quotes', () => {
+    const base = { modelParams: 8, bandwidth: 3.35, peakFlops: 990, slaItlMs: 30 }
+
+    // The flat region: same step time from B=1 to B=256, 256x the throughput.
+    expect(stepModel(1, base).stepMs).toBeCloseTo(4.8, 1)
+    expect(stepModel(256, base).stepMs).toBeCloseTo(4.8, 1)
+    expect(Math.round(stepModel(1, base).throughput)).toBe(209)
+    expect(Math.round(stepModel(256, base).throughput)).toBe(53600)
+    expect(stepModel(256, base).bound).toBe('bandwidth')
+
+    // A bigger model lifts the whole curve.
+    const big = { ...base, modelParams: 70 }
+    expect(stepModel(1, big).stepMs).toBeCloseTo(41.8, 1)
+    expect(Math.round(stepModel(256, big).throughput)).toBe(6126)
+
+    // But the knee is a property of the hardware, not of the model.
+    expect(bSat(base)).toBeCloseTo(295.5, 1)
+    expect(bSat({ ...base, modelParams: 1 })).toBeCloseTo(bSat(base), 6)
+    expect(bSat(big)).toBeCloseTo(bSat(base), 6)
+    expect(bSat({ ...base, bandwidth: 1 })).toBeCloseTo(990, 1)
+    expect(bSat({ ...base, peakFlops: 2000 })).toBeCloseTo(597, 0)
+
+    // And an ITL SLO can be unreachable at every batch size.
+    expect(stepModel(1, big).itlMs).toBeGreaterThan(base.slaItlMs)
+    expect(stepModel(1, base).itlMs).toBeLessThan(base.slaItlMs)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const modelParams of [1, 8, 70]) {
       for (const bandwidth of [1, 3.35, 8]) {

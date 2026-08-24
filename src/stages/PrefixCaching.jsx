@@ -7,9 +7,11 @@ import {
   Code,
   CodeBlock,
   SimFrame,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
+  Term,
 } from '../components/ui'
 import { BlockGrid, C, reqColor } from '../components/viz'
 
@@ -188,73 +190,127 @@ export default function PrefixCaching() {
       simFooter={
         <>
           Watch <Code>R0</Code> get zero hits and pay full price, then <Code>R1</Code> and{' '}
-          <Code>R2</Code> reclaim its blocks for free. Then set the shared prefix to a value that
-          isn't a multiple of {BLOCK} — the trailing partial block turns yellow and stays
-          uncacheable forever, so those tokens are recomputed on every single request.
+          <Code>R2</Code> reclaim its blocks for free. Then nudge the shared prefix off a
+          multiple of {BLOCK} — say 64 to 72. The trailing partial block turns yellow and stays
+          uncacheable forever, so those tokens get recomputed on every single request.
         </>
       }
+      tryThis={[
+        'Run with caching on: R0 computes all 76 of its tokens, R1 and R2 only 12 each.',
+        'Switch it off: 228 tokens computed instead of 100.',
+        'Move Shared prefix from 64 to 72. No extra hits, and every later request now computes 20 tokens instead of 12.',
+      ]}
       panel={<PrefixViz sim={sim} />}
     >
       <p>
-        Real traffic repeats itself. A system prompt, a few-shot preamble, a document every question
-        is asked about — the same leading tokens arrive over and over. Recomputing their KV every
-        time is pure waste, and the block structure from stage 03 already gives us everything needed
-        to avoid it.
+        Real traffic repeats itself. A system prompt, a few-shot preamble, a document that every
+        question is asked about — the same leading tokens keep arriving. Computing their KV again
+        every time is pure waste.
+      </p>
+      <p>
+        And the machinery to avoid it already exists. <StageRef n={3} title /> gave every sequence
+        a list of fixed-size blocks. A block filled with the same tokens holds the same KV, so the
+        only missing piece is a way to recognise one.
       </p>
 
       <h2>Blocks get identities</h2>
       <p>
-        Every <em>complete</em> block of {BLOCK} tokens is given a hash combining{' '}
-        <strong>the previous block's hash</strong>, the current block's token ids, and optional
-        metadata. Because the hash is chained, matching block 3 is only meaningful if blocks 0–2
-        matched as well — which is precisely what "shared <em>prefix</em>" means. Each result is
-        stored as a <Code>BlockHash</Code> holding both the hash and its token ids, and the list
-        lands in <Code>req_to_block_hashes[request_id]</Code>.
+        Every <em>complete</em> block of {BLOCK} tokens gets a hash. Three things go into it: the
+        previous block's hash, this block's token ids, and some optional metadata.
+      </p>
+      <p>
+        Including the previous hash is the trick that makes this a <em>prefix</em> cache. A block's
+        identity depends on everything before it, so matching block 3 is only possible if blocks 0,
+        1 and 2 matched too. You can never accidentally reuse a block whose history was different.
+      </p>
+      <p>
+        Each result is stored as a <Code>BlockHash</Code>, holding the hash and its token ids, and
+        the list is kept in <Code>req_to_block_hashes[request_id]</Code>.
       </p>
 
       <Callout kind="note" title="What else goes into the hash">
         <p>
-          Optional metadata folded into the hash includes the multimodal hash, the LoRA id, and a{' '}
-          <strong>cache salt</strong> — injected into the first block's hash so that only requests
-          carrying the same salt can reuse those blocks. That is how you get tenant isolation out of
-          a shared cache.
+          The optional metadata includes the multimodal hash, the LoRA id, and a{' '}
+          <Term>cache salt</Term>. The salt is mixed into the first block's hash, so only
+          requests carrying the same salt can match those blocks. That is how one shared cache gives
+          separate tenants isolation from each other.
+        </p>
+      </Callout>
+
+      <Callout kind="intuition" title="Why the hash chains">
+        <p>
+          Read each block's hash as a page number that also encodes every page before it. "Chapter 3
+          of <em>this</em> book" is not "chapter 3". A match therefore means the whole run from the
+          beginning agrees.
+        </p>
+        <p>
+          Without the chain you could reuse a block whose earlier context was different. That is the
+          right arithmetic from the wrong conversation.
         </p>
       </Callout>
 
       <h2>The lookup</h2>
       <p>
-        During scheduling, <Code>kv_cache_manager.get_computed_blocks</Code> calls{' '}
-        <Code>hash_request_tokens</Code> and then <Code>find_longest_cache_hit</Code>, which checks
-        those hashes against <Code>cached_block_hash_to_block</Code> and stops at the first miss.
-        Whatever was hit doesn't need <Code>allocate_slots</Code> to find fresh blocks — those
-        blocks already hold valid KV.
+        While scheduling a request, <Code>kv_cache_manager.get_computed_blocks</Code> hashes the
+        prompt with <Code>hash_request_tokens</Code>, then hands the hashes to{' '}
+        <Code>find_longest_cache_hit</Code>.
+      </p>
+      <p>
+        That walks the list against <Code>cached_block_hash_to_block</Code> — the map from hash to
+        physical block — and stops at the first miss. Everything up to that point is already
+        computed, so <Code>allocate_slots</Code> never has to find fresh blocks for it.
       </p>
 
       <BlogFigure src="prefix_pt1.png" caption="First request: hashes computed, no hits found" />
       <BlogFigure src="prefix_pt2.png" caption="Blocks allocated and registered in the cache map" />
       <BlogFigure src="prefix_pt3.png" caption="Second request: all prefix blocks hit and reused" />
 
-      <h2>Why freed blocks are still useful</h2>
+      <h2>Watch it happen</h2>
       <p>
-        This is the subtle and clever part. When the first request finishes, its blocks go back to{' '}
-        <Code>free_block_queue</Code> and their refcount drops to zero — but they{' '}
-        <strong>keep their hash and their entry in the cache map</strong>, and they still physically
-        contain the KV. So when the second request's hashes match, the engine simply pulls them out
-        of the free queue again. Refcount zero means "reusable", not "invalid".
+        The panel sends three requests that share a 64-token prefix and differ in the last 12
+        tokens. Run it with <Code>Prefix caching</Code> on <Code>on</Code>.
       </p>
       <p>
-        If the first request were still alive, the refcount would increment instead (to 2), and
+        <Code>R0</Code> arrives cold. It gets no hits and computes all 76 of its tokens.{' '}
+        <Code>R1</Code> and <Code>R2</Code> each hit 4 blocks and compute only 12 tokens — their own
+        suffix. Across the three requests, 100 tokens are computed and 128 are skipped.
+      </p>
+      <p>
+        Switch <Code>Prefix caching</Code> to <Code>off</Code> and the total computed goes to 228,
+        with nothing saved. Same answers, more than twice the prefill work.
+      </p>
+
+      <h2>Why freed blocks are still useful</h2>
+      <p>
+        This is the subtle part, and it is where the FIFO free queue pays off. When a request
+        finishes, its blocks go back to <Code>free_block_queue</Code> and their{' '}
+        <Term>refcount</Term> — the number of requests currently using that block — drops to
+        zero.
+      </p>
+      <p>
+        But they keep their hash, they keep their entry in the cache map, and they still physically
+        contain the KV. So when a later request's hashes match, the engine pulls those same blocks
+        back out of the free queue. A refcount of zero means reusable, not invalid.
+      </p>
+      <p>
+        Had the first request still been running, the refcount would have gone up to 2 instead. Then
         neither request could free the blocks out from under the other.
       </p>
 
       <Callout kind="key" title="When a cached block actually dies">
         <p>
-          A block is only invalidated at the moment it is about to be <em>reallocated</em>. Because{' '}
-          <Code>free_block_queue</Code> pops from the left and pushes freed blocks to the right,
-          blocks are reused in roughly least-recently-freed order — an LRU eviction policy that
-          nobody had to write. When a popped block turns out to still carry a hash present in{' '}
-          <Code>cached_block_hash_to_block</Code>, the engine clears the hash and removes the map
-          entry at that point, so it can never be handed out for the old prefix again.
+          A block is only invalidated at the moment it is about to be handed to somebody else. The
+          free queue takes blocks from the front and pushes freed ones to the back, so the block
+          reused next is always the one freed longest ago.
+        </p>
+        <p>
+          That is least-recently-used eviction — the oldest thing goes first — and nobody had to
+          write it. It falls out of the queue's ordering.
+        </p>
+        <p>
+          The invalidation itself happens on the way out. If a popped block still carries a hash in{' '}
+          <Code>cached_block_hash_to_block</Code>, the engine clears the hash and deletes the map
+          entry right then. It can never be handed out for the old prefix again.
         </p>
       </Callout>
 
@@ -273,29 +329,33 @@ outputs = llm.generate(long_prefix + prompts[0], sampling_params)  # cold
 outputs = llm.generate(long_prefix + prompts[1], sampling_params)  # warm`}
       />
 
-      <Callout kind="gotcha" title="Two real limits">
-        <p>
-          <strong>It only helps prefill.</strong> Decode still has to run token by token; prefix
-          caching removes recomputation, not generation.
-        </p>
-        <p>
-          <strong>Alignment matters.</strong> Only complete blocks are cacheable, so a shared prefix
-          of length <Code>L</Code> leaves <Code>L % {BLOCK}</Code> tokens to be recomputed every
-          time. For a long prefix that rounding is negligible; for a 20-token system prompt it is
-          most of it.
-        </p>
-        <p>
-          Prefix caching is enabled by default; disable it with{' '}
-          <Code>enable_prefix_caching=False</Code>.
-        </p>
-      </Callout>
+      <h2>Two real limits</h2>
+      <p>
+        <strong>It only helps prefill.</strong> Decode still has to run one token at a time. Prefix
+        caching removes recomputation, never generation.
+      </p>
+      <p>
+        <strong>Alignment matters, and the panel will show you.</strong> Only whole blocks can be
+        cached, so a shared prefix of length <Code>L</Code> leaves <Code>L % {BLOCK}</Code> tokens
+        stranded in a partial block that has to be recomputed every single time.
+      </p>
+      <p>
+        Try it. Move <Code>Shared prefix</Code> from 64 up to 72. The 8 extra shared tokens buy
+        nothing: the hits stay at 4 blocks, and every later request now computes 20 tokens instead
+        of 12. Total work rises from 100 tokens to 124.
+      </p>
+      <p>
+        For a long document that rounding is noise. For a 20-token system prompt it is most of the
+        prompt. Prefix caching is on by default; turn it off with{' '}
+        <Code>enable_prefix_caching=False</Code>.
+      </p>
 
       <Takeaways
         items={[
-          'Complete blocks get a chained hash (previous hash + token ids + metadata), so a hit on block n implies every earlier block matched too. find_longest_cache_hit walks that chain and stops at the first miss.',
-          'Freed blocks retain their hash, their cache-map entry, and their KV contents — refcount 0 means reclaimable, not invalid. Invalidation happens only when a block is popped for reallocation.',
-          'Because free_block_queue pops from the left and pushes freed blocks to the right, cache eviction is LRU as a side effect of the data structure.',
-          'It accelerates prefill only, and only for whole blocks — a prefix that is not a multiple of block_size always leaves a remainder to recompute.',
+          'Complete blocks get a chained hash: previous hash, token ids, metadata. A hit on block n therefore guarantees every earlier block matched, which is what makes it a prefix cache.',
+          'Freed blocks keep their hash, their cache-map entry and their contents. A refcount of 0 means reclaimable, not invalid; invalidation happens only when a block is popped to be reused.',
+          'Cache eviction is least-recently-used for free, because free_block_queue takes from the front and returns freed blocks to the back.',
+          'It speeds up prefill only, and only for whole blocks. A prefix that is not a multiple of block_size leaves a remainder that is recomputed on every request.',
         ]}
       />
     </StageLayout>

@@ -1,7 +1,16 @@
 import { useSimulation } from '../hooks/useSimulation'
 import StageLayout from '../components/layout/StageLayout'
 import scheduler, { BLOCK } from '../sim/scheduler'
-import { Callout, Code, CodeBlock, StatRow, StatTile, Takeaways } from '../components/ui'
+import {
+  Callout,
+  Code,
+  CodeBlock,
+  StageRef,
+  StatRow,
+  StatTile,
+  Takeaways,
+  Term,
+} from '../components/ui'
 import { C, MeterBar, QueueLane, StackedBar, Timeline } from '../components/viz'
 
 function SchedViz({ sim }) {
@@ -135,88 +144,129 @@ export default function Scheduler() {
           Two experiments worth running. <strong>Drop “KV blocks” to 6–8:</strong> the pool runs dry
           mid-decode and you'll see requests get preempted and re-prefilled — watch the
           recomputed-tokens counter, that's pure waste. <strong>Drop “token budget” to 24</strong>{' '}
-          with a wide prompt spread: long prompts become unschedulable and the sim deadlocks, which
-          is exactly the hole stage 06 fills.
+          with the prompt spread wide: long prompts become unschedulable, and the run stops and says
+          so. That is exactly the hole <StageRef n={6} /> fills.
         </>
       }
+      tryThis={[
+        'Run as-is: 20 steps, nobody preempted.',
+        'Drop KV blocks to 8: one preemption, and 55 tokens of prefill work destroyed.',
+        'Set Prompt-length spread to 90 and Token budget to 24. The run stops — that prompt can never be scheduled.',
+      ]}
       panel={<SchedViz sim={sim} />}
     >
       <p>
-        Every engine step begins with one decision: of everything currently in the system, who runs
-        now? That decision is made against two hard limits — a per-step{' '}
-        <strong>token budget</strong>, and the finite pool of KV blocks from stage 03.
+        Every engine step opens with one decision: of everything in the system right now, who runs?
+        The scheduler answers it against two hard limits.
+      </p>
+      <p>
+        The first is the <Term>token budget</Term> — <Code>max_num_batched_tokens</Code>, the
+        most tokens the engine will put through one forward pass. The second is the pool of KV
+        blocks from <StageRef n={3} />, which is finite and already spoken for by whoever is
+        running.
       </p>
 
       <h2>Decode first</h2>
       <p>
-        The scheduler considers the <Code>running</Code> queue before the <Code>waiting</Code>{' '}
-        queue. For each running request it:
+        The scheduler always looks at the <Code>running</Code> queue before the <Code>waiting</Code>{' '}
+        queue. For each request already running it does three things:
       </p>
       <ol>
         <li>
-          computes how many new tokens it needs — usually 1, but not always: speculative decoding
-          and async scheduling both make it more (stage 09);
+          works out how many new tokens it needs — usually 1, though speculative decoding and async
+          scheduling both make it more (<StageRef n={9} />);
         </li>
         <li>
-          calls <Code>allocate_slots</Code>;
+          calls <Code>allocate_slots</Code> to get KV blocks for them;
         </li>
-        <li>subtracts those tokens from the step's token budget.</li>
+        <li>takes those tokens off the step's budget.</li>
       </ol>
       <p>
-        Only then does it turn to <Code>waiting</Code> and pull in prefills: fetch the number of
-        already-computed blocks (zero unless prefix caching is on, stage 07), call{' '}
-        <Code>allocate_slots</Code>, pop the request out of <Code>waiting</Code> into{' '}
-        <Code>running</Code> with status <Code>RUNNING</Code>, and subtract from the budget again.
+        Only then does it turn to <Code>waiting</Code> and try to admit new prompts. For each one it
+        checks how many of its blocks are already computed — zero, unless prefix caching is on
+        (<StageRef n={7} />). It calls <Code>allocate_slots</Code> for the rest, moves the request
+        into <Code>running</Code>, and takes its prompt length off the budget too.
       </p>
 
-      <Callout kind="key" title="Why decode gets priority">
+      <Callout kind="key" title="Why decode gets to go first">
         <p>
-          A decode is a request a user is already waiting on, mid-answer, and it costs exactly one
-          token of budget. A prefill costs as many tokens as the prompt is long. Serving decodes
-          first keeps inter-token latency smooth for everyone already streaming, and spends whatever
-          budget is left admitting new work. Prefills are the elastic part of the step.
+          A decode belongs to somebody who is already watching an answer appear, and it costs one
+          token of budget. A prefill costs as many tokens as its prompt is long. Serving decodes
+          first keeps everybody's answer flowing at a steady rate, and spends whatever budget is
+          left over on admitting new work. Prefills are the part of the step that stretches.
         </p>
       </Callout>
 
-      <h2>allocate_slots, and what happens when it fails</h2>
+      <h2>When there aren't enough blocks</h2>
       <p>
-        <Code>allocate_slots</Code> computes how many new blocks are needed —{' '}
-        <Code>ceil(new_tokens / {BLOCK})</Code> — and checks the pool. If there isn't enough, the
-        engine has two options, and which one it takes depends on whether the request is a decode or
-        a prefill.
+        <Code>allocate_slots</Code> works out how many new blocks are needed —{' '}
+        <Code>ceil(new_tokens / {BLOCK})</Code> — and looks at the pool. If there are not enough,
+        what happens next depends on who was asking.
       </p>
       <p>
-        For a prefill, it simply doesn't get scheduled; it waits for a later step. For a decode, the
-        engine may attempt <strong>recompute preemption</strong>: evict a lower-priority request by
-        calling <Code>kv_cache_manager.free</Code>, returning its blocks to the pool so the decode
-        can continue.
+        A <Term>prefill</Term> is simply not scheduled. It stays in <Code>waiting</Code> and
+        tries again on a later step. Nothing is lost, because it had not started.
+      </p>
+      <p>
+        A <Term>decode</Term> is different, because stopping it would strand a half-finished
+        answer. So the engine may <Term>preempt</Term> somebody instead: pick a lower-priority
+        request, call <Code>kv_cache_manager.free</Code> on it, and hand its blocks to the decode
+        that needed them.
       </p>
 
-      <Callout kind="gotcha" title="Preemption is not free — it is negative work">
+      <Callout kind="gotcha" title="Preemption is worse than doing nothing">
         <p>
-          A preempted request loses its KV cache entirely. When it is eventually rescheduled, its
-          whole prefill has to run <em>again</em> from scratch. That's why the simulator counts
-          recomputed tokens separately: they're compute you paid for twice. Heavy preemption is a
-          signal that <Code>max_num_seqs</Code> or <Code>gpu_memory_utilization</Code> is set wrong
-          for the workload, not that the scheduler is doing something clever.
+          The preempted request does not pause. It loses its KV cache completely, and when it is
+          admitted again its whole prompt has to be prefilled a second time. The work is not
+          deferred, it is destroyed.
         </p>
         <p>
-          V0 also supported <em>swap</em> preemption, moving KV to CPU memory instead of discarding
-          it. V1 uses recomputation.
+          That is why the panel counts recomputed tokens on their own: they are compute you paid for
+          twice. A run with steady preemption is not a scheduler being clever. It is a sign that{' '}
+          <Code>max_num_seqs</Code> (how many requests may run at once) or{' '}
+          <Code>gpu_memory_utilization</Code> (how much VRAM the cache may claim) is set wrong for
+          the traffic.
+        </p>
+        <p>
+          The older V0 engine could also <em>swap</em> a preempted request's KV cache out to CPU
+          memory rather than discard it. V1 always recomputes.
         </p>
       </Callout>
 
-      <h2>Policy: FCFS or priority</h2>
+      <h2>Watch it happen</h2>
       <p>
-        The waiting queue is ordered by the scheduler's policy setting. Under <Code>FCFS</Code> it's
-        a plain append — arrival order wins. Under <Code>priority</Code> it's a heap push, and a
-        late-arriving important request can jump the queue. Flip the policy knob and watch the
-        admission order change while everything else stays the same.
+        The panel starts with 14 KV blocks, a budget of 64 tokens per step, and 7 requests arriving
+        over time. Press <Code>▶ Run</Code>: everything is served in 20 steps with no preemptions at
+        all, because the pool is never tight.
+      </p>
+      <p>
+        Now drag <Code>KV blocks</Code> down to 8 and run it again. One request gets preempted, and
+        the recomputed-tokens counter climbs to 55. Those 55 tokens are prefill work the engine did,
+        threw away, and had to do over.
+      </p>
+      <p>
+        Then try starving the other limit. Put <Code>Prompt-length spread</Code> at 90 and{' '}
+        <Code>Token budget / step</Code> at 24. The run stops after 12 steps with only one request
+        finished, and the panel says why. A prompt of 82 tokens cannot fit in a 24-token budget, and
+        there is no way to feed it in pieces. <StageRef n={6} title /> is the feature that closes
+        exactly this hole.
+      </p>
+
+      <h2>Who goes first: FCFS or priority</h2>
+      <p>
+        The order of the <Code>waiting</Code> queue is set by the scheduler's policy.{' '}
+        <Code>FCFS</Code> means first come, first served: new requests are added to the back, and
+        arrival order decides everything.
+      </p>
+      <p>
+        <Code>priority</Code> keeps the queue sorted by an importance number instead, so a request
+        that arrives late but matters more can move ahead of ones already queued. Flip the{' '}
+        <Code>Policy</Code> knob and watch the admission order change while nothing else does.
       </p>
 
       <CodeBlock
         lang="text"
-        caption="The whole step, compressed. Note that the same budget is shared: whatever decode leaves behind is what prefill gets to spend."
+        caption="The whole step, compressed. One budget is shared: whatever the decodes leave behind is what the prefills get to spend."
         code={`budget = max_num_batched_tokens
 
 for req in running:                  # decodes first
@@ -235,9 +285,10 @@ for req in waiting:                  # then prefills, with what's left
 
       <Takeaways
         items={[
-          'One shared token budget per step, spent on decodes first and prefills second. Mixing both kinds in a single step is a V1 capability that V0 lacked.',
-          'allocate_slots is where memory pressure becomes visible: it either finds blocks, defers a prefill, or preempts a running request to free some.',
-          'Recompute preemption trades thrown-away prefill work for forward progress on decodes. It keeps the engine alive under pressure, but sustained preemption means your capacity settings are wrong.',
+          'One shared token budget per step, spent on decodes first and prefills with whatever is left. Mixing both kinds in a single step is a V1 capability that V0 lacked.',
+          'allocate_slots is where memory pressure becomes visible. It either finds the blocks, defers a prefill, or preempts a running request to free some.',
+          'Preemption destroys work rather than deferring it: the victim loses its KV cache and has to prefill again from scratch. Sustained preemption means your capacity settings are wrong.',
+          'A prompt longer than the whole token budget can never be scheduled at all, which is the hole chunked prefill exists to close.',
         ]}
       />
     </StageLayout>
