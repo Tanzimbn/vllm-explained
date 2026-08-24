@@ -16,7 +16,7 @@ import guidedDecoding, {
   VOCAB as GD_VOCAB,
   WORDS,
 } from './guidedDecoding'
-import specDecode, { pTarget, speedup, VOCAB as SD_VOCAB } from './specDecode'
+import specDecode, { pDraft, pTarget, speedup, VOCAB as SD_VOCAB } from './specDecode'
 import disaggPD, { pdStats } from './disaggPD'
 import parallelism, { tpCost } from './parallelism'
 import distributedSim, { balanceStats, score } from './distributed'
@@ -859,6 +859,47 @@ describe('guided decoding', () => {
 })
 
 describe('speculative decoding', () => {
+  /**
+   * Stage 09 quotes the default run, both ends of the k sweep, and the two
+   * probabilities it uses to explain the residual distribution. Pinned so the
+   * worked example and the tuning advice cannot drift apart from the sim.
+   */
+  it('produces exactly the numbers the stage 09 prose quotes', () => {
+    const base = { k: 4, agreement: 0.6, draftCost: 0.1, method: 'ngram' }
+    const after = (p, rounds) => {
+      let s = specDecode.init(p)
+      for (let i = 0; i < rounds; i++) s = specDecode.step(s, p)
+      return s
+    }
+
+    const s = after(base, 400)
+    const sp = speedup(s, base)
+    expect(sp.acceptRate).toBeCloseTo(0.62, 2)
+    expect(sp.tokensPerRound).toBeCloseTo(3.5, 1)
+    expect(sp.factor).toBeCloseTo(2.5, 1)
+
+    // Low agreement: the peak is early and large k is actively worse.
+    const low = (k) => speedup(after({ ...base, agreement: 0.2, k }, 300), { ...base, agreement: 0.2, k }).factor
+    expect(low(3)).toBeCloseTo(1.8, 1)
+    expect(low(7)).toBeCloseTo(1.6, 1)
+    expect(low(7)).toBeLessThan(low(3))
+
+    // High agreement: still climbing at the top of the knob's range.
+    const high = (k) => speedup(after({ ...base, agreement: 0.9, k }, 300), { ...base, agreement: 0.9, k }).factor
+    expect(high(7)).toBeCloseTo(4.0, 1)
+    expect(high(7)).toBeGreaterThan(high(3))
+
+    // The two probabilities the residual example is built on.
+    expect(pTarget[0]).toBeCloseTo(0.42, 2) // "the"
+    expect(pTarget[1]).toBeCloseTo(0.21, 2) // "a"
+    const draft = pDraft(0.6)
+    expect(draft[0]).toBeCloseTo(0.29, 2)
+    expect(draft[1]).toBeCloseTo(0.29, 2)
+    // So "the" keeps weight in the residual and "a" is clamped away.
+    expect(pTarget[0] - draft[0]).toBeGreaterThan(0.1)
+    expect(pTarget[1] - draft[1]).toBeLessThan(0)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const k of [1, 4, 7]) {
       for (const agreement of [0, 0.5, 1]) {
