@@ -1154,6 +1154,34 @@ describe('tensor parallelism', () => {
 })
 
 describe('distributed serving — load balancing', () => {
+  /**
+   * Stage 12 quotes both ends of the routing comparison, including the part that
+   * makes load-aware routing look pointless. That honesty is the lesson: with
+   * uniform request costs, counting requests already is counting work, and
+   * round-robin edges it out. The gap only opens once costs are uneven.
+   */
+  it('produces exactly the routing comparison the stage 12 prose quotes', () => {
+    const mean = (policy, over) => {
+      const p = { arrivalRate: 2, skew: 6, capacity: 3, ...over, policy }
+      let s = distributedSim.init(p)
+      for (let i = 0; i < 200; i++) s = distributedSim.step(s, p)
+      return balanceStats(s).mean
+    }
+
+    // Uniform costs: round-robin is fractionally better than scoring.
+    const flat = { skew: 0, arrivalRate: 2 }
+    expect(mean('roundrobin', flat)).toBeCloseTo(0.81, 1)
+    expect(mean('score', flat)).toBeCloseTo(0.89, 1)
+    expect(mean('roundrobin', flat)).toBeLessThan(mean('score', flat))
+
+    // Uneven costs under load: scoring holds while the others fall apart.
+    const hard = { skew: 10, arrivalRate: 5 }
+    expect(mean('score', hard)).toBeCloseTo(1.07, 1)
+    expect(mean('roundrobin', hard)).toBeCloseTo(2.6, 1)
+    expect(mean('random', hard)).toBeCloseTo(9.15, 1)
+    expect(mean('score', hard)).toBeLessThan(mean('roundrobin', hard) / 2)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const policy of ['score', 'roundrobin', 'random']) {
       for (const arrivalRate of [1, 3, 5]) {
