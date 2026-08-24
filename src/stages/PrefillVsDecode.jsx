@@ -174,8 +174,8 @@ export default function PrefillVsDecode() {
 
       <p>
         vLLM's V1 scheduler can put prefills and decodes in the <em>same</em> step. The older V0
-        engine had to pick one or the other, which left capacity unused. <StageRef n={5} /> shows
-        how the mixing works.
+        engine had to pick one or the other, which left capacity unused. <StageRef n={5} title />{' '}
+        shows how the mixing works.
       </p>
 
       <h2>Why the obvious fix isn't enough</h2>
@@ -228,7 +228,7 @@ export default function PrefillVsDecode() {
         Reshuffling that often sounds expensive. Here it is nearly free, and the reason is worth
         knowing early. A vLLM batch is not a fixed block of sequences that has to be held together
         from one step to the next. There is no shape to preserve, so changing who is in it costs
-        nothing. <StageRef n={5} /> shows what it is instead.
+        nothing. <StageRef n={5} title /> shows what it is instead.
       </p>
 
       <Callout kind="gotcha" title="Offline vs online">

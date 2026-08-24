@@ -289,6 +289,29 @@ describe('engine — the guided tour', () => {
 })
 
 describe('scheduler', () => {
+  /**
+   * Stage 04 walks the reader through three runs and quotes each one. Pinned so
+   * the page cannot quietly start describing a simulator that no longer exists.
+   */
+  it('produces exactly the three runs the stage 04 prose describes', () => {
+    const base = { policy: 'fcfs', tokenBudget: 64, numBlocks: 14, numRequests: 7, promptSpread: 42 }
+
+    // Roomy: everybody served, nobody preempted.
+    const easy = runSim(schedulerSim, base, 400).state
+    expect([easy.tick, easy.totalPreemptions, easy.wastedRecompute]).toEqual([20, 0, 0])
+    expect(easy.requests.every((r) => r.status === 'done')).toBe(true)
+
+    // Tight on blocks: one preemption, and the work it destroys is counted.
+    const tight = runSim(schedulerSim, { ...base, numBlocks: 8 }, 400).state
+    expect([tight.totalPreemptions, tight.wastedRecompute]).toEqual([1, 55])
+
+    // Tight on budget: a prompt longer than the whole budget can never be run.
+    const starved = runSim(schedulerSim, { ...base, tokenBudget: 24, promptSpread: 90 }, 400).state
+    expect(starved.tick).toBe(12)
+    expect(starved.requests.filter((r) => r.status === 'done')).toHaveLength(1)
+    expect(starved.stuck).toMatch(/chunked prefill/)
+  })
+
   it('holds all invariants across a wide parameter sweep', () => {
     for (const policy of ['fcfs', 'priority']) {
       for (const numBlocks of [8, 14, 40]) {

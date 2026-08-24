@@ -261,7 +261,8 @@ export default function PagedAttention() {
           the end. That ordering is not an accident. A freed block keeps its contents and its
           identity while it waits its turn. So if the same text turns up again before that block is
           reused, it can be reclaimed with the data still in it. Free the newest block first and it
-          would be overwritten almost immediately. <StageRef n={7} /> is built entirely on this.
+          would be overwritten almost immediately. <StageRef n={7} title /> is built entirely on
+          this.
         </p>
         <p>
           It is a doubly linked list for the same reason. Reclaiming a block means pulling it out
