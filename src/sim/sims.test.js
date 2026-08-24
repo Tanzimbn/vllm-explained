@@ -169,6 +169,37 @@ describe('kvcache — the block allocator', () => {
    * empties, every live request stalls waiting for a block, and no request can
    * ever finish to return one.
    */
+  /**
+   * Stage 03 walks the reader through both allocators and quotes what they will
+   * see. Pinned here so the sim cannot drift away from the sentence.
+   */
+  it('produces exactly the two runs the stage 03 prose describes', () => {
+    const opts = { numBlocks: 32, numRequests: 7, blockSize: 8 }
+    const lowestEfficiency = (p) => {
+      const { trace, params } = runSim(kvcache, p, 400)
+      const live = trace.filter((s) => s.blocks.some((b) => b.owner !== null))
+      return Math.round(Math.min(...live.map((s) => memoryBreakdown(s, params).efficiency)))
+    }
+
+    const paged = { ...opts, mode: 'paged' }
+    const p = runSim(kvcache, paged, 400).state
+    expect([p.tick, p.peakConcurrent]).toEqual([23, 7])
+    expect(lowestEfficiency(paged)).toBe(85)
+
+    const contig = { ...opts, mode: 'contiguous' }
+    const c = runSim(kvcache, contig, 400).state
+    expect([c.tick, c.peakConcurrent]).toEqual([33, 3])
+    expect(lowestEfficiency(contig)).toBe(35)
+
+    // Both serve the same seven requests; paging just holds more of them at once.
+    expect(p.requests.filter((r) => r.status === 'done')).toHaveLength(7)
+    expect(c.requests.filter((r) => r.status === 'done')).toHaveLength(7)
+
+    // Ten requests is where contiguous starts failing on fragmentation alone.
+    const crowded = runSim(kvcache, { ...contig, numRequests: 10 }, 400).state
+    expect(crowded.blockedByFragmentation).toBe(6)
+  })
+
   it('always terminates, in every corner of the knob space', () => {
     for (const mode of ['paged', 'contiguous']) {
       for (const numBlocks of [16, 24, 32, 48, 64]) {
@@ -193,6 +224,8 @@ describe('kvcache — the block allocator', () => {
     while (!kvcache.isDone(s, p) && steps++ < 3000) s = kvcache.step(s, p)
 
     expect(kvcache.isDone(s, p)).toBe(true)
+    // Stage 03 quotes this: nine admitted, stuck after nine steps.
+    expect([s.tick, s.peakConcurrent]).toEqual([9, 9])
     // Terminal, but not because everyone finished — this is the stuck state.
     expect(s.requests.some((r) => r.status !== 'done')).toBe(true)
     expect(s.freeQueue).toHaveLength(0)

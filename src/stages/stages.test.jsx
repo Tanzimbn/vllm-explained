@@ -233,7 +233,7 @@ function readability(html) {
 const READABILITY_BUDGET = {
   'prefill-vs-decode': { avg: 15.0, max: 29 },
   'engine-anatomy': { avg: 16.0, max: 30 },
-  'paged-attention': { avg: 18.5, max: 43 },
+  'paged-attention': { avg: 16.0, max: 31 },
   scheduler: { avg: 17.0, max: 47 },
   'forward-pass': { avg: 17.0, max: 35 },
   'chunked-prefill': { avg: 18.0, max: 33 },

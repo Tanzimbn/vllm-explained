@@ -6,6 +6,7 @@ import {
   Callout,
   Code,
   CodeBlock,
+  StageRef,
   StatRow,
   StatTile,
   Takeaways,
@@ -151,34 +152,55 @@ export default function PagedAttention() {
       }
     >
       <p>
-        A decoding sequence needs every key and value vector it has computed so far. Keeping them is
-        the KV cache, and it is the resource that decides how many requests you can serve at once.
-        The question is how to lay it out in VRAM.
+        A sequence being decoded needs every key and value it has computed so far. Holding on to
+        them is the <strong>KV cache</strong>, and it is the resource that decides how many requests
+        a GPU can serve at once. Weights are fixed in size; the KV cache is not, and it grows with
+        every token.
+      </p>
+      <p>
+        So the question this stage answers is a storage question. Where in VRAM — the GPU's own
+        memory, the HBM from <StageRef n={1} /> — do all those keys and values go?
       </p>
 
-      <h2>The obvious layout, and why it fails</h2>
+      <h2>The obvious answer, and why it fails</h2>
       <p>
-        The straightforward answer is one contiguous buffer per sequence. But you don't know how
-        long a sequence will get, so you must reserve for the worst case —{' '}
-        <Code>prompt_len + max_tokens</Code>. A request that asks for up to 512 tokens and stops
-        after 30 has been squatting on 482 tokens' worth of VRAM the whole time. Worse, because the
-        reservation must be <em>adjacent</em>, you end up with free blocks scattered in gaps too
-        small to admit anybody, while the total free memory looks plentiful.
+        The natural answer is to give each sequence one solid run of memory, the way you would
+        allocate an array. The trouble is that you have to size it before you know how long the
+        sequence will be. So you size it for the worst case: <Code>prompt_len + max_tokens</Code>.
       </p>
       <p>
-        Flip the panel on the right to <Code>contiguous</Code> and watch three numbers rot: slot
-        efficiency, peak concurrency, and the fragmentation-blocked counter.
+        A request that allows up to 512 tokens and stops after 30 has been sitting on 482 tokens'
+        worth of VRAM the entire time. Nobody else could use it. That is the first kind of waste,
+        and it is unbounded — it grows with whatever limit the caller happened to set.
+      </p>
+      <p>
+        The second kind is nastier. Because each run has to be <em>adjacent</em>, the free space
+        left between sequences ends up in gaps too small to fit anybody, even when the total free
+        space is plentiful. Memory that exists and cannot be used is called{' '}
+        <strong>external fragmentation</strong>.
       </p>
 
       <h2>Paging it instead</h2>
       <p>
-        PagedAttention borrows the trick operating systems use for RAM. The KV cache is carved into
-        fixed-size <strong>blocks</strong> — <Code>block_size</Code> defaults to 16 tokens — and a
-        sequence gets a <em>block table</em> mapping its logical positions to whatever physical
-        blocks happen to be free. Adjacency stops mattering entirely, so external fragmentation
-        disappears. Blocks are handed out on demand as a sequence grows, so reservation waste
-        disappears too. The only waste left is the tail of the last, partially-filled block: at most{' '}
-        <Code>block_size - 1</Code> token slots per sequence.
+        PagedAttention borrows the trick operating systems use for RAM. Chop the KV cache into
+        fixed-size <strong>blocks</strong> — <Code>block_size</Code> is 16 tokens by default — and
+        stop insisting that a sequence's blocks sit next to each other.
+      </p>
+      <p>
+        Each sequence gets a <strong>block table</strong>: a little list saying which physical block
+        holds its first 16 tokens, which holds the next 16, and so on. The blocks can be scattered
+        anywhere in the pool. <Code>#3 → #17 → #4</Code> is a perfectly ordinary block table.
+      </p>
+      <p>
+        Both kinds of waste go away with that one change. Adjacency no longer matters, so external
+        fragmentation cannot happen. Blocks are handed out only when a sequence actually grows into
+        them, so nothing is reserved for output that never arrives.
+      </p>
+      <p>
+        One small waste is left. The last block of a sequence is usually only part full, which
+        strands up to <Code>block_size - 1</Code> token slots. That is called{' '}
+        <strong>internal fragmentation</strong>, and unlike the other two it is bounded: at most 15
+        slots per sequence, no matter how the caller sets its limits.
       </p>
 
       <BlogFigure
@@ -187,42 +209,70 @@ export default function PagedAttention() {
         max={560}
       />
 
-      <h2>How allocation actually happens</h2>
+      <h2>Watch it happen</h2>
       <p>
-        The scheduler calls <Code>allocate_slots</Code>, which does three things:
+        The panel on the right hands 32 blocks to 7 requests. Press <Code>▶ Run</Code> with{' '}
+        <Code>Allocator</Code> on <Code>paged</Code>. All seven requests are in flight together,
+        slot efficiency never drops below 85%, and everyone is finished after 23 steps.
+      </p>
+      <p>
+        Now switch <Code>Allocator</Code> to <Code>contiguous</Code> and run it again. The same
+        seven requests take 33 steps, only three are ever in flight at once, and slot efficiency
+        falls to 35%. At its worst, 139 tokens' worth of blocks are reserved and holding nothing.
+      </p>
+      <p>
+        That gap is the whole argument for paged attention, and it is not a speed trick. Each step
+        does the same work in both modes. Paging simply lets more requests be in the machine at the
+        same time.
+      </p>
+      <Callout kind="note" title="Making external fragmentation show itself">
+        <p>
+          At these settings the pool never actually splinters. Turn <Code>Requests</Code> up to 10
+          in <Code>contiguous</Code> mode and it does. The run reports six admissions blocked by
+          fragmentation: six times when enough blocks were free, but not enough of them side by
+          side. In <Code>paged</Code> mode that counter cannot move at all, at any setting.
+        </p>
+      </Callout>
+
+      <h2>How a request actually gets its blocks</h2>
+      <p>
+        The scheduler calls <Code>allocate_slots</Code>, which does three things.
       </p>
       <ol>
         <li>
-          <strong>Compute the number of blocks.</strong> How many new blocks <Code>n</Code> does
-          this request need? A prefill with 17 new tokens needs <Code>ceil(17/16) = 2</Code>.
+          <strong>Work out how many new blocks are needed.</strong> A prefill with 17 new tokens
+          needs <Code>ceil(17 / 16) = 2</Code> of them.
         </li>
         <li>
-          <strong>Check availability.</strong> If the pool is short, bail out early — and depending
-          on whether this is a decode or a prefill, the engine may attempt{' '}
-          <strong>recompute preemption</strong>, evicting a lower-priority request by calling{' '}
-          <Code>kv_cache_manager.free</Code> to return its blocks to the pool. Otherwise it just
-          skips scheduling this request.
+          <strong>Check the pool can cover it.</strong> If it cannot, give up here. Depending on
+          whether this is a prefill or a decode, the engine may instead take blocks away from a
+          lower-priority request — <strong>preemption</strong>, which is <StageRef n={4} />.
         </li>
         <li>
-          <strong>Allocate.</strong> Pull the first <Code>n</Code> blocks off{' '}
-          <Code>free_block_queue</Code> (a doubly linked list) and store them in{' '}
-          <Code>req_to_blocks</Code>, the dict mapping <Code>request_id</Code> → its block list.
+          <strong>Hand them over.</strong> Take the first <Code>n</Code> blocks off{' '}
+          <Code>free_block_queue</Code>, the pool of blocks nobody is using, and record them in{' '}
+          <Code>req_to_blocks</Code> — the table from request id to that request's block list.
         </li>
       </ol>
 
-      <Callout kind="key" title="Why a queue and not a stack">
+      <Callout kind="key" title="Why the free pool is a queue and not a stack">
         <p>
-          <Code>free_block_queue</Code> is FIFO — blocks are popped from the left and freed blocks
-          are pushed to the right. That ordering is what makes prefix caching possible: a freed
-          block keeps its contents and its hash while it sits in the queue, so it can be{' '}
-          <em>reclaimed</em> with its data intact if the same prefix shows up again before it gets
-          reused. Stage 07 is built entirely on this.
+          <Code>free_block_queue</Code> hands out blocks from the front and takes freed ones back at
+          the end. That ordering is not an accident. A freed block keeps its contents and its
+          identity while it waits its turn. So if the same text turns up again before that block is
+          reused, it can be reclaimed with the data still in it. Free the newest block first and it
+          would be overwritten almost immediately. <StageRef n={7} /> is built entirely on this.
+        </p>
+        <p>
+          It is a doubly linked list for the same reason. Reclaiming a block means pulling it out
+          of the middle of the queue, and that kind of list can do it without searching for the
+          block first.
         </p>
       </Callout>
 
       <CodeBlock
         lang="text"
-        caption="Bigger blocks mean less bookkeeping but a longer wasted tail; smaller blocks mean tighter packing but more block-table indirection. 16 is the default compromise."
+        caption="Bigger blocks mean less bookkeeping but a longer wasted tail; smaller blocks pack more tightly but need a longer block table. 16 is the default compromise."
         code={`bytes per block = 2 (key/value)
                 * block_size          (default 16)
                 * num_kv_heads
@@ -230,20 +280,34 @@ export default function PagedAttention() {
                 * dtype_num_bytes     (e.g. 2 for bf16)`}
       />
 
-      <Callout kind="gotcha" title="Only complete blocks are shareable">
+      <Callout kind="gotcha" title="Only full blocks can be shared">
         <p>
-          A partially-filled block cannot be cached or shared, because its identity isn't settled
-          yet — more tokens are still going to land in it. This is why prefix caching only reuses
-          whole blocks, and why a shared prefix that isn't a multiple of <Code>block_size</Code>{' '}
-          leaves <Code>prefix_len % block_size</Code> tokens to be recomputed every time.
+          A partly-filled block cannot be cached or shared with another request. More tokens are
+          still going to land in it, so what it holds is not settled yet. This is why prefix caching
+          only ever reuses whole blocks. A shared prefix that is not a multiple of{' '}
+          <Code>block_size</Code> leaves <Code>prefix_len % block_size</Code> tokens to be
+          recomputed every time.
         </p>
       </Callout>
 
+      <h2>What happens when the pool runs out</h2>
+      <p>
+        Paging removes the waste, but it cannot create memory. Set <Code>Requests</Code> to 10 in{' '}
+        <Code>paged</Code> mode and watch: nine requests are admitted, the pool empties, and every
+        one of them then wants a block to keep decoding.
+      </p>
+      <p>
+        Nothing can finish, so nothing is freed, so nothing can finish. The run stops after 9 steps
+        with the note saying so. Deciding who to throw out of the machine to break that tie is not
+        the allocator's job — it belongs to <StageRef n={4} />, which is next.
+      </p>
+
       <Takeaways
         items={[
-          'Paged attention splits the KV cache into fixed-size blocks and gives each sequence a block table, so its KV need not be contiguous. That kills external fragmentation and the need to reserve for the worst case.',
-          'The only remaining waste is the partially-filled last block — bounded by block_size - 1 tokens per sequence, instead of unbounded reservation waste.',
-          'allocate_slots is the choke point: compute n blocks, check the pool, and either take them off free_block_queue or trigger preemption. Everything about memory pressure in vLLM routes through it.',
+          'Paged attention splits the KV cache into fixed-size blocks and gives each sequence a block table, so its blocks need not be adjacent. That removes external fragmentation and the need to reserve for the worst case.',
+          'The only waste left is the partly-filled last block — at most block_size - 1 slots per sequence, instead of unbounded reservation waste.',
+          'free_block_queue is FIFO so that a freed block keeps its data long enough to be reclaimed, which is what makes prefix caching possible.',
+          'allocate_slots is the choke point: work out how many blocks, check the pool, then either take them or preempt somebody. Every memory-pressure decision in vLLM runs through it.',
         ]}
       />
     </StageLayout>
