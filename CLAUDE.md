@@ -34,6 +34,11 @@ No linter or formatter is configured; match the surrounding style.
 
 ### One source of truth for structure
 
+`src/content/glossary.js` defines every term the site uses — all 67 concept chips plus the jargon
+the prose leans on — keyed by the exact chip string, with the stage that introduces it. The chips in
+`StageHeader` link to `/glossary#<slug>`, and `stages.test.jsx` fails if a stage names a concept the
+glossary does not define. Definitions are the one-line reminder; the stage owns the explanation.
+
 `src/content/roadmap.js` declares chapters and stages (slug, number, title, hook, concepts, sims,
 `prereq`). It drives the router, prev/next, and the roadmap map page. Two fields serve the reader's
 path through the site rather than the routing: a stage's `prereq` lists the earlier stages it builds

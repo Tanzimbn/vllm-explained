@@ -4,7 +4,9 @@ import { MemoryRouter } from 'react-router-dom'
 import { createElement as h } from 'react'
 
 import { bridgeFor, chapters, stages, stagesOf } from '../content/roadmap'
+import { glossary, glossaryByTerm, slugify, termsOf } from '../content/glossary'
 import RoadmapMap from './RoadmapMap'
+import Glossary from './Glossary'
 
 import PrefillVsDecode from './PrefillVsDecode'
 import EngineAnatomy from './EngineAnatomy'
@@ -314,5 +316,55 @@ describe('acts hand off to each other', () => {
     expect(html).toContain(`/stage/${bridge.firstStage.slug}`)
     // A mid-act stage gets nothing.
     expect(render(PAGES['prefill-vs-decode'])).not.toContain('End of this act')
+  })
+})
+
+describe('the glossary covers what the site says', () => {
+  it('defines every concept chip on every stage', () => {
+    const undefinedTerms = stages.flatMap((s) =>
+      s.concepts.filter((c) => !glossaryByTerm[c]).map((c) => `${s.slug}: "${c}"`)
+    )
+    expect(
+      undefinedTerms,
+      'a chip links to its glossary entry, so a chip without one is a dead end'
+    ).toEqual([])
+  })
+
+  it('introduces every term on a stage that exists, and only once', () => {
+    const numbers = new Set(stages.map((s) => s.n))
+    const seen = new Set()
+    glossary.forEach((g) => {
+      expect(numbers.has(g.stage), `${g.term} points at stage ${g.stage}`).toBe(true)
+      expect(g.def.length, `${g.term} has no definition`).toBeGreaterThan(40)
+      expect(seen.has(g.term), `${g.term} is defined twice`).toBe(false)
+      seen.add(g.term)
+    })
+  })
+
+  it('gives every term a unique anchor', () => {
+    const slugs = glossary.map((g) => g.slug)
+    expect(new Set(slugs).size, 'two terms would fight over one #anchor').toBe(slugs.length)
+    slugs.forEach((s) => expect(s).toMatch(/^[a-z0-9-]+$/))
+    // The anchors the chips build must be the ones the page renders.
+    glossary.forEach((g) => expect(g.slug).toBe(slugify(g.term)))
+  })
+
+  it('renders every term, its anchor, and a link back to its stage', () => {
+    const html = render(Glossary)
+    glossary.forEach((g) => {
+      expect(html, `${g.term} is missing`).toContain(`id="${g.slug}"`)
+      expect(html).toContain(g.def.slice(0, 30).replace(/&/g, '&amp;'))
+    })
+    stages
+      .filter((s) => termsOf(s.n).length > 0)
+      .forEach((s) => expect(html).toContain(`/stage/${s.slug}`))
+  })
+
+  it('lets every stage header link its chips into the glossary', () => {
+    // StageHeader is rendered by App, not by the page components, so this
+    // checks the data contract the header depends on rather than its markup.
+    stages.forEach((s) =>
+      s.concepts.forEach((c) => expect(glossaryByTerm[c].slug).toBeTruthy())
+    )
   })
 })

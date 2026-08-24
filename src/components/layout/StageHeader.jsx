@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 
 import { chapters, stageByNumber } from '../../content/roadmap'
+import { glossaryByTerm } from '../../content/glossary'
 
 /*
  * The stage's title band, above the two-pane grid.
@@ -47,15 +48,23 @@ export default function StageHeader({ stage }) {
         </div>
       )}
 
+      {/* The chips used to look like definitions and be inert. Each one now
+          lands on its glossary entry, which matters most for a reader who
+          arrived here from a search rather than from stage 01. */}
       <div className="mt-5 flex flex-wrap gap-2">
-        {stage.concepts.map((c) => (
-          <span
-            key={c}
-            className="border border-accent px-2 py-[3px] font-mono text-[11px] text-accent-700"
-          >
-            {c}
-          </span>
-        ))}
+        {stage.concepts.map((c) => {
+          const entry = glossaryByTerm[c]
+          const chip = 'border border-accent px-2 py-[3px] font-mono text-[11px] text-accent-700'
+          return entry ? (
+            <Link key={c} to={`/glossary#${entry.slug}`} className={`${chip} hover:bg-accent-100`}>
+              {c}
+            </Link>
+          ) : (
+            <span key={c} className={chip}>
+              {c}
+            </span>
+          )
+        })}
       </div>
     </div>
   )
