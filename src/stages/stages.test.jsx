@@ -241,7 +241,7 @@ const READABILITY_BUDGET = {
   'guided-decoding': { avg: 14.9, max: 29 },
   'speculative-decoding': { avg: 15.0, max: 32 },
   'disaggregated-pd': { avg: 16.4, max: 30 },
-  'multiproc-executor': { avg: 18.5, max: 38 },
+  'multiproc-executor': { avg: 16.0, max: 31 },
   'distributed-serving': { avg: 17.0, max: 44 },
   benchmarking: { avg: 17.0, max: 57 },
 }

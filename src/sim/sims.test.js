@@ -1081,6 +1081,30 @@ describe('disaggregated P/D', () => {
 })
 
 describe('tensor parallelism', () => {
+  /**
+   * Stage 11 quotes the whole TP sweep, because "four GPUs to eight buys
+   * nothing" is the point of the page and is far more convincing as a number
+   * than as a claim. Pinned so the page and the chart cannot disagree.
+   */
+  it('produces exactly the scaling the stage 11 prose quotes', () => {
+    const at = (tpSize, commCost) => tpCost(tpSize, { commCost, numLayers: 3 })
+
+    // Default all-reduce cost: efficiency collapses, and TP8 ties TP4.
+    expect(at(2, 1).speedup).toBeCloseTo(1.6, 1)
+    expect(at(4, 1).speedup).toBeCloseTo(2.0, 1)
+    expect(at(8, 1).speedup).toBeCloseTo(2.0, 1)
+    expect(at(8, 1).efficiency).toBeCloseTo(0.25, 2)
+    expect(at(8, 1).speedup).toBeCloseTo(at(4, 1).speedup, 2)
+
+    // Free communication: perfect scaling. Communication is the whole story.
+    expect(at(8, 0).speedup).toBeCloseTo(8, 5)
+    expect(at(8, 0).efficiency).toBeCloseTo(1, 5)
+
+    // Expensive communication: eight GPUs are slower than one.
+    expect(at(8, 4).speedup).toBeCloseTo(0.62, 2)
+    expect(at(8, 4).speedup).toBeLessThan(1)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const tpSize of [1, 2, 4, 8]) {
       for (const numLayers of [2, 4, 6]) {
