@@ -995,6 +995,37 @@ describe('speculative decoding', () => {
 })
 
 describe('disaggregated P/D', () => {
+  /**
+   * Stage 10 quotes both deployments and two points on the transfer knob. The
+   * TTFT half of that only became true once TTFT was stamped after the KV
+   * transfer rather than at the end of the prefill: before that the transfer was
+   * invisible, disaggregation looked free, and the knob changed nothing.
+   */
+  it('produces exactly the trade the stage 10 prose describes', () => {
+    const base = { numRequests: 6, promptLen: 768, transferCost: 2 }
+    const stats = (p) => pdStats(runSim(disaggPD, p, 400).state)
+
+    const colo = stats({ ...base, mode: 'colocated' })
+    const split = stats({ ...base, mode: 'disagg' })
+
+    // The win: decode steps stop having prefills bolted onto them.
+    expect(Math.round(colo.p95Itl)).toBe(83)
+    expect(Math.round(colo.p50Itl)).toBe(7)
+    expect(split.p95Itl).toBeCloseTo(split.p50Itl, 0)
+    expect(split.p95Itl).toBeLessThan(colo.p95Itl / 10)
+
+    // The bill: the KV has to cross the wire before a first token exists.
+    expect(Math.round(colo.meanTtft)).toBe(255)
+    expect(Math.round(split.meanTtft)).toBe(379)
+
+    // And it is paid entirely out of TTFT — the ITL win is unaffected.
+    const cheap = stats({ ...base, mode: 'disagg', transferCost: 1 })
+    const dear = stats({ ...base, mode: 'disagg', transferCost: 4 })
+    expect(Math.round(cheap.meanTtft)).toBe(316)
+    expect(Math.round(dear.meanTtft)).toBe(456)
+    expect(dear.p95Itl).toBeCloseTo(cheap.p95Itl, 2)
+  })
+
   it('invariants hold across the knob space', () => {
     for (const mode of ['colocated', 'disagg']) {
       for (const promptLen of [256, 768, 1536]) {

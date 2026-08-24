@@ -131,12 +131,14 @@ export default defineSim({
     }
 
     // in-flight transfers
+    const landedNow = []
     requests.forEach((r) => {
       if (r.status !== 'transferring') return
       r.transferLeft -= 1
       if (r.transferLeft <= 0) {
         r.status = 'decoding'
         r.generated = 1
+        landedNow.push(r)
         store = store.filter((x) => x !== r.id)
         connectorPhase = 'load'
         if (!note)
@@ -161,7 +163,17 @@ export default defineSim({
       r.generated += 1
       r.itls.push(decodeMs)
     })
-    if (next) next.ttft = s.elapsedMs + prefillMs
+    /*
+     * TTFT is stamped when the KV lands on the decode instance, not when the
+     * prefill finishes. In this deployment the prefill instance runs with
+     * max_tokens=1 and the *decode* instance produces the stream, so the user
+     * cannot see a first token until the transfer completes. Charging TTFT at
+     * prefill time hid the transfer entirely, which left the KV-transfer knob
+     * with nothing to change and made the page's central trade-off invisible.
+     */
+    landedNow.forEach((r) => {
+      r.ttft = s.elapsedMs + ms
+    })
 
     return {
       tick: s.tick + 1,
