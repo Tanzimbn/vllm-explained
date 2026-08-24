@@ -678,6 +678,31 @@ describe('chunked prefill', () => {
 })
 
 describe('prefix caching', () => {
+  /**
+   * Stage 07 quotes the cold/warm split and the alignment demo. The alignment
+   * one only became possible when the Shared prefix knob dropped to steps of 8:
+   * on steps of 16 every value was a multiple of block_size, so the page was
+   * telling readers to do something the panel could not do.
+   */
+  it('produces exactly the runs the stage 07 prose describes', () => {
+    const base = { prefixTokens: 64, suffixTokens: 12, numRequests: 3 }
+
+    const on = runSim(prefixCache, { ...base, enabled: 'on' }, 400).state
+    expect(on.requests.map((r) => r.hits)).toEqual([0, 4, 4])
+    expect(on.requests.map((r) => r.computedTokens)).toEqual([76, 12, 12])
+    expect([on.totalComputed, on.totalSaved]).toEqual([100, 128])
+
+    const off = runSim(prefixCache, { ...base, enabled: 'off' }, 400).state
+    expect([off.totalComputed, off.totalSaved]).toEqual([228, 0])
+
+    // 8 extra shared tokens buy no extra hits and cost every later request 8
+    // recomputed tokens — the alignment lesson, in numbers.
+    const misaligned = runSim(prefixCache, { ...base, enabled: 'on', prefixTokens: 72 }, 400).state
+    expect(misaligned.requests.map((r) => r.hits)).toEqual([0, 4, 4])
+    expect(misaligned.requests.map((r) => r.computedTokens)).toEqual([84, 20, 20])
+    expect([misaligned.totalComputed, misaligned.totalSaved]).toEqual([124, 128])
+  })
+
   it('invariants hold across the knob space', () => {
     for (const enabled of ['on', 'off']) {
       for (const prefixTokens of [16, 64, 160]) {

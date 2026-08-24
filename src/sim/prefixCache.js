@@ -103,7 +103,13 @@ export default defineSim({
       ],
       default: 'on',
     },
-    prefixTokens: { label: 'Shared prefix', min: 16, max: 160, step: 16, default: 64 },
+    /*
+     * Steps of 8, not 16: the whole alignment lesson is that a prefix which is
+     * not a multiple of block_size leaves a remainder to recompute forever, and
+     * a knob that could only ever land on multiples of 16 made that
+     * undemonstrable.
+     */
+    prefixTokens: { label: 'Shared prefix', min: 16, max: 160, step: 8, default: 64 },
     suffixTokens: { label: 'Distinct suffix', min: 4, max: 40, step: 4, default: 12 },
     numRequests: { label: 'Requests', min: 2, max: 4, default: 3 },
   },
